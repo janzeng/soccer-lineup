@@ -209,10 +209,9 @@
         <button class="action-btn" onclick="generate()">Generate Rotation</button>
         <div class="print-toggle-wrapper">
             <input type="checkbox" id="includeSummary" onchange="saveUI()">
-            <label for="includeSummary">Include Summary Page</label>
+            <label for="includeSummary">Include Summary</label>
         </div>
-        <button class="action-btn print-btn" onclick="window.print()">Print Lineups</button>
-        <button class="action-btn reset-btn" onclick="clearRoster()">Clear Roster</button>
+        <button class="action-btn print-btn" onclick="window.print()">Print Lineups</button>        <button class="action-btn reset-btn" onclick="clearRoster()">Clear Roster</button>
     </div>
 
     <div id="statsContainer"></div>
@@ -427,6 +426,16 @@
         let titleStr = `${teamName.toUpperCase()} — ${format.toLowerCase()}`;
         div.innerHTML = `<h2>${titleStr}</h2>${rightText ? `<div class="half-label">${rightText}</div>` : ''}`;
         return div;
+    }
+
+    function printLineups() {
+        // Force a fresh generation to sync the summary page and any other live checkbox changes
+        generate(); 
+        
+        // A tiny delay ensures the browser has time to paint the new HTML before freezing for the print dialog
+        setTimeout(() => {
+            window.print();
+        }, 50);
     }
 
     function generate() {
