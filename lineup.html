@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Lineup Generator</title>
+    <style>
+        /* General UI */
+        body { font-family: system-ui, -apple-system, sans-serif; margin: 20px; color: #222; background: #f0f2f5; }
+        .no-print { background: white; padding: 25px; border-radius: 12px; margin: 0 auto 20px auto; border: 1px solid #ddd; max-width: 900px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        
+        /* Header & Settings */
+        .app-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #eee; }
+        .app-header h1 { margin: 0; font-size: 1.5rem; color: #1976d2; }
+        .settings-bar { display: flex; gap: 15px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+        .input-group { display: flex; flex-direction: column; gap: 4px; }
+        .input-group label { font-size: 0.8rem; font-weight: bold; color: #555; text-transform: uppercase; }
+        .settings-bar input[type="text"], .settings-bar select { padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+        .settings-bar input[type="text"] { width: 250px; }
+        
+        .utility-btns { display: flex; gap: 8px; margin-left: auto; }
+        .util-btn { background: #e0e0e0; color: #333; border: none; padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .util-btn:hover { background: #ccc; }
+        .info-btn { background: #fff3e0; color: #e65100; border: 1px solid #ffb74d; }
+        .info-btn:hover { background: #ffe0b2; }
+
+        /* Checkbox Table UI */
+        .role-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; background: #fff; }
+        .role-table th, .role-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        .role-table th { background: #333; color: white; font-size: 0.9rem; }
+        .role-table td:first-child { text-align: left; background: #f9f9f9; width: 30%; }
+        .role-table input[type="text"] { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; font-weight: bold; }
+        .role-table input[type="checkbox"] { transform: scale(1.3); cursor: pointer; accent-color: #2e7d32; }
+        .absent-row td { opacity: 0.5; background: #fafafa; }
+        .absent-row input[type="text"] { text-decoration: line-through; color: #888; }
+        
+        .add-player-btn { background: #f5f5f5; border: 1px dashed #ccc; width: 100%; padding: 10px; text-align: center; border-radius: 6px; cursor: pointer; font-weight: bold; color: #555; margin-bottom: 25px; }
+        .add-player-btn:hover { background: #eee; }
+
+        /* Stats Table */
+        .stats-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.85rem; }
+        .stats-table th, .stats-table td { border: 1px solid #ddd; padding: 8px 10px; text-align: center; }
+        .stats-table th { background: #f5f5f5; color: #333; }
+        .stats-table tr:nth-child(even) { background-color: #fafafa; }
+        .absent-text { color: #999; font-style: italic; }
+
+        /* Action Buttons */
+        .btn-container { display: flex; gap: 10px; margin-bottom: 10px; }
+        button.action-btn { flex: 2; border: none; padding: 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; background: #2e7d32; color: white; transition: 0.2s;}
+        button.action-btn:hover { background: #1b5e20; }
+        button.reset-btn { flex: 1; background: #d32f2f; }
+        button.reset-btn:hover { background: #b71c1c; }
+        .print-btn { background: #1976d2; flex: 2; }
+        .print-btn:hover { background: #1565c0; }
+
+        /* App Grid Layout (Print & Screen) */
+        .grid { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0; }
+        .rotation-card { width: 49%; border: 2px solid #333; padding: 10px; margin-bottom: 15px; background: #fff; box-sizing: border-box; }
+        h2 { margin: -10px -10px 10px -10px; font-size: 0.9rem; background: #333; color: #fff; padding: 6px 12px; display: flex; justify-content: space-between; border-radius: 1px 1px 0 0; }
+        
+        /* Flex Field Layout - Adapts to Formations */
+        .field-layout { display: flex; flex-direction: column; gap: 6px; }
+        .field-row { display: flex; gap: 6px; justify-content: center; }
+        .pos { flex: 1; border: 1px solid #ddd; padding: 6px; text-align: center; font-size: 0.85rem; min-height: 38px; border-radius: 4px; display: flex; flex-direction: column; justify-content: center; background: #fff; }
+        .label { font-weight: bold; font-size: 0.55rem; display: block; color: #888; text-transform: uppercase; margin-bottom: 2px; border-bottom: 1px solid #eee; }
+        .p-name-abbr { font-weight: normal; font-size: 0.75rem; color: #555; }
+        
+        /* UI Colors */
+        .row-s, .row-f { background: #fff3e0; border-color: #ffb74d; }
+        .row-m { background: #e3f2fd; border-color: #64b5f6; }
+        .row-d { background: #f5f5f5; border-color: #bdbdbd; }
+        .row-gk { background: #fffde7; border-color: #fbc02d; }
+
+        /* Subs Section */
+        .subs { margin-top: 8px; font-size: 0.8rem; padding-top: 6px; border-top: 2px dashed #eee; line-height: 1.3; }
+        .arrow { font-weight: bold; padding: 0 4px; color: #d32f2f; }
+        
+        /* Modals */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        .modal { background: white; padding: 25px; border-radius: 12px; max-width: 500px; width: 90%; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .modal h3 { margin-top: 0; color: #1976d2; }
+        .modal-close { background: #333; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 15px; }
+        .modal textarea { width: 100%; height: 100px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 12px; box-sizing: border-box; margin-bottom: 10px; resize: vertical; }
+
+        /* Print Specifics */
+        .print-header { display: none; text-align: center; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+        .print-header h1 { margin: 0 0 5px 0; font-size: 1.5rem; }
+        .print-header span { font-size: 1rem; color: #555; }
+        .roster-footer { display: none; width: 100%; border-top: 2px solid #000; padding-top: 10px; margin-top: 10px; font-size: 0.85rem; text-align: center; }
+        .roster-footer div { margin-bottom: 4px; }
+        .page-break { display: none; }
+
+        @media print { 
+            .no-print, .modal-overlay { display: none !important; } 
+            body { background: white; margin: 0; padding: 0; }
+            .print-header { display: block; }
+            .rotation-card { width: 48%; border: 2px solid black; }
+            .page-break { display: block; flex-basis: 100%; height: 0; page-break-after: always; margin: 0; border: none; }
+            h2 { background: white !important; color: black !important; border-bottom: 2px solid black; }
+            .pos, .row-s, .row-f, .row-m, .row-d, .row-gk { background: white !important; border: 1px solid black !important; }
+            .label { color: black !important; border-bottom: 1px solid black !important; }
+            .arrow { color: black; }
+            .roster-footer { display: block; flex-basis: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="no-print">
+    <div class="app-header">
+        <h1>⚽ Lineup Generator</h1>
+        <div class="utility-btns">
+            <button class="util-btn info-btn" onclick="openModal('infoModal')">How it Works (Info)</button>
+            <button class="util-btn" onclick="exportData()">Export Roster</button>
+            <button class="util-btn" onclick="openModal('importModal')">Import Roster</button>
+        </div>
+    </div>
+    
+    <div class="settings-bar">
+        <div class="input-group">
+            <label>Team Name</label>
+            <input type="text" id="teamName" placeholder="e.g. Pizza Eaters" oninput="saveUI()">
+        </div>
+        <div class="input-group">
+            <label>Field Format</label>
+            <select id="fieldFormat" onchange="saveUI()">
+                <option value="7v7">7v7 (1 Fwd, 2 Wing, 1 Mid, 2 Def)</option>
+                <option value="9v9">9v9 (2 Fwd, 3 Mid, 3 Def)</option>
+                <option value="11v11">11v11 (2 Fwd, 4 Mid, 4 Def)</option>
+            </select>
+        </div>
+    </div>
+
+    <table class="role-table" id="roleTable">
+        <thead>
+            <tr>
+                <th>Player Name</th>
+                <th title="Captain">C</th>
+                <th title="Goalie">G</th>
+                <th title="Striker">S</th>
+                <th title="Forward">F</th>
+                <th title="Midfield">M</th>
+                <th title="Defense">D</th>
+                <th title="Absent">Abs</th>
+            </tr>
+        </thead>
+        <tbody id="playerList">
+            </tbody>
+    </table>
+    <div class="add-player-btn" onclick="addPlayerRow()">+ Add Additional Player</div>
+    
+    <div class="btn-container">
+        <button class="action-btn" onclick="generate()">Generate Rotation</button>
+        <button class="action-btn print-btn" onclick="window.print()">Print Lineups</button>
+        <button class="action-btn reset-btn" onclick="clearRoster()">Clear Roster</button>
+    </div>
+
+    <div id="statsContainer"></div>
+</div>
+
+<div class="print-header" id="printHeader">
+    <h1 id="printTeamName">Team Name</h1>
+    <span id="printFormat">7v7 Rotation Matrix</span>
+</div>
+
+<div id="output" class="grid"></div>
+
+<div class="modal-overlay" id="importModal">
+    <div class="modal">
+        <h3>Import Roster Data</h3>
+        <p style="font-size: 0.9rem; color: #555;">Paste the roster code you copied from another device here to instantly load your team.</p>
+        <textarea id="importText" placeholder="Paste data here..."></textarea>
+        <button class="action-btn" style="width: 100%; margin-bottom: 10px;" onclick="importData()">Load Data</button>
+        <button class="modal-close" onclick="closeModal('importModal')">Cancel</button>
+    </div>
+</div>
+
+<div class="modal-overlay" id="infoModal">
+    <div class="modal">
+        <h3>Coach's Guide</h3>
+        <ul style="font-size: 0.9rem; color: #333; line-height: 1.5; padding-left: 20px;">
+            <li><b>The Fair-Play Algorithm:</b> The generator tracks every shift. When subbing, it prioritizes putting in players who have sat on the bench the longest, and pulling out players who have played the most consecutive shifts.</li>
+            <li><b>Position Locks:</b> A player will <b>only</b> be substituted into positions you have checked for them. Ensure you check enough boxes across your roster to fill the field!</li>
+            <li><b>Goalie Logic:</b> 
+                <ul>
+                    <li><i>1 Goalie:</i> Plays the entire game.</li>
+                    <li><i>2 Goalies:</i> Swaps at halftime. The 2nd half Goalie gets Q2S2 completely off to gear up!</li>
+                    <li><i>3+ Goalies:</i> Rotates evenly every quarter.</li>
+                </ul>
+            </li>
+            <li><b>Absences:</b> Checking 'Abs' completely removes a player from the math for this game, but remembers their positions for next week.</li>
+            <li><b>Portability:</b> Use Export/Import to move your roster from your laptop to your phone for game day!</li>
+        </ul>
+        <button class="modal-close" onclick="closeModal('infoModal')">Got it!</button>
+    </div>
+</div>
+
+<script>
+    const ROLE_KEYS = ['C', 'G', 'S', 'F', 'M', 'D', 'A'];
+    const ROLE_MAP = { 'C': 'Cap', 'G': 'Goal', 'S': 'S', 'F': 'F', 'M': 'M', 'D': 'D', 'A': 'Abs' };
+    const STORAGE_KEY = 'v1_SmartSub_Data';
+
+    // Formation Definitions
+    const FORMATS = {
+        '7v7': {
+            slots: ['s', 'lf', 'rf', 'm', 'ld', 'rd'],
+            layout: [
+                { class: 'row-s', items: [{id:'s', label:'Striker'}] },
+                { class: 'row-f', items: [{id:'lf', label:'Forward (L)'}, {id:'rf', label:'Forward (R)'}] },
+                { class: 'row-m', items: [{id:'m', label:'Midfield'}] },
+                { class: 'row-d', items: [{id:'ld', label:'Defense (L)'}, {id:'rd', label:'Defense (R)'}] }
+            ]
+        },
+        '9v9': {
+            slots: ['lf', 'rf', 'lm', 'cm', 'rm', 'ld', 'cd', 'rd'],
+            layout: [
+                { class: 'row-f', items: [{id:'lf', label:'Forward (L)'}, {id:'rf', label:'Forward (R)'}] },
+                { class: 'row-m', items: [{id:'lm', label:'Mid (L)'}, {id:'cm', label:'Mid (C)'}, {id:'rm', label:'Mid (R)'}] },
+                { class: 'row-d', items: [{id:'ld', label:'Def (L)'}, {id:'cd', label:'Def (C)'}, {id:'rd', label:'Def (R)'}] }
+            ]
+        },
+        '11v11': {
+            slots: ['lf', 'rf', 'lm', 'lcm', 'rcm', 'rm', 'lb', 'lcb', 'rcb', 'rb'],
+            layout: [
+                { class: 'row-f', items: [{id:'lf', label:'Forward (L)'}, {id:'rf', label:'Forward (R)'}] },
+                { class: 'row-m', items: [{id:'lm', label:'Mid (L)'}, {id:'lcm', label:'Mid (LC)'}, {id:'rcm', label:'Mid (RC)'}, {id:'rm', label:'Mid (R)'}] },
+                { class: 'row-d', items: [{id:'lb', label:'Back (L)'}, {id:'lcb', label:'Back (LC)'}, {id:'rcb', label:'Back (RC)'}, {id:'rb', label:'Back (R)'}] }
+            ]
+        }
+    };
+
+    window.onload = () => { loadUI(); };
+
+    // --- Modal Logic ---
+    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+    // --- Data Management ---
+    function loadUI() {
+        let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { teamName: "", format: "7v7", players: [] };
+        
+        document.getElementById('teamName').value = data.teamName || "";
+        document.getElementById('fieldFormat').value = data.format || "7v7";
+        
+        const tbody = document.getElementById('playerList');
+        tbody.innerHTML = '';
+        
+        let initialPlayers = data.players.length > 0 ? data.players : Array(7).fill({name: '', roles: []});
+        initialPlayers.forEach(p => addPlayerRow(p.name, p.roles));
+    }
+
+    function saveUI() {
+        let teamName = document.getElementById('teamName').value.trim();
+        let format = document.getElementById('fieldFormat').value;
+        let rows = document.querySelectorAll('#playerList tr');
+        let players = [];
+
+        rows.forEach(row => {
+            let name = row.querySelector('.p-name').value.trim();
+            if (name !== "") {
+                let roles = Array.from(row.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+                players.push({ name, roles });
+            }
+        });
+
+        let data = { teamName, format, players };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        return data;
+    }
+
+    function addPlayerRow(name = '', roles = []) {
+        const tbody = document.getElementById('playerList');
+        let tr = document.createElement('tr');
+        if (roles.includes('A')) tr.className = 'absent-row';
+        
+        let html = `<td><input type="text" class="p-name" value="${name}" placeholder="Player Name" oninput="saveUI()"></td>`;
+        ROLE_KEYS.forEach(key => {
+            let isChecked = roles.includes(key) ? 'checked' : '';
+            html += `<td><input type="checkbox" value="${key}" ${isChecked} onchange="toggleAbs(this); saveUI()"></td>`;
+        });
+        tr.innerHTML = html;
+        tbody.appendChild(tr);
+    }
+
+    function toggleAbs(checkbox) {
+        if (checkbox.value === 'A') {
+            let row = checkbox.closest('tr');
+            checkbox.checked ? row.classList.add('absent-row') : row.classList.remove('absent-row');
+        }
+    }
+
+    function clearRoster() {
+        if (confirm("Are you sure you want to clear the entire roster?")) {
+            localStorage.removeItem(STORAGE_KEY);
+            document.getElementById('teamName').value = "";
+            document.getElementById('output').innerHTML = "";
+            document.getElementById('statsContainer').innerHTML = "";
+            loadUI();
+        }
+    }
+
+// --- Updated Import / Export (Plain Text JSON) ---
+    function exportData() {
+        let data = saveUI();
+        if (data.players.length === 0) { alert("Add players before exporting."); return; }
+        
+        // Convert to pretty-printed JSON string
+        let plainTextJson = JSON.stringify(data, null, 2);
+        
+        // Use a prompt so the user can see and copy the text directly
+        // Also tries to copy to clipboard automatically
+        navigator.clipboard.writeText(plainTextJson).then(() => {
+            alert("Roster JSON copied to clipboard! You can also save this text in a note or email.");
+        });
+    }
+
+    function importData() {
+        let text = document.getElementById('importText').value.trim();
+        if (!text) return;
+        try {
+            // Parse the plain text JSON
+            let decoded = JSON.parse(text);
+            
+            if (decoded.format && decoded.players) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(decoded));
+                loadUI();
+                closeModal('importModal');
+                document.getElementById('importText').value = "";
+                alert("Roster successfully loaded!");
+            } else { alert("Invalid data format. Missing 'format' or 'players' keys."); }
+        } catch (e) {
+            alert("Invalid JSON. Please ensure you pasted the full text including the brackets { }.");
+        }
+    }
+
+    // --- Generator Logic ---
+    function isEligible(roles, slot) {
+        if (!roles || roles.length === 0 || roles.includes('A')) return false;
+        
+        // Match specific checkbox criteria based on the ID of the field slot
+        if (slot === 'gk') return roles.includes('G');
+        if (['s'].includes(slot)) return roles.includes('S') || roles.includes('F'); 
+        if (['lf', 'rf'].includes(slot)) return roles.includes('F') || roles.includes('S');
+        if (['m', 'lm', 'cm', 'rm', 'lcm', 'rcm'].includes(slot)) return roles.includes('M'); 
+        if (['ld', 'rd', 'cd', 'lb', 'rb', 'lcb', 'rcb'].includes(slot)) return roles.includes('D');
+        return false;
+    }
+
+    function formatNamePrint(name, roles, showAbbr = false) {
+        if (!name) return "";
+        if (!showAbbr) return name; 
+        if (roles.length === 0) return name;
+        let abbrStr = roles.includes('A') ? 'Abs' : roles.map(r => ROLE_MAP[r]).join(', ');
+        return `${name} <span class="p-name-abbr">[${abbrStr}]</span>`;
+    }
+
+    function generate() {
+        const data = saveUI();
+        const output = document.getElementById('output');
+        output.innerHTML = "";
+
+        // Update Print Header
+        let tName = data.teamName || "Unnamed Team";
+        document.getElementById('printTeamName').innerText = tName;
+        document.getElementById('printFormat').innerText = `${data.format} Rotation Matrix`;
+
+        const formatConfig = FORMATS[data.format];
+        const slotOrder = formatConfig.slots;
+
+        // Active vs Absent Mapping
+        let rolesMap = {};
+        data.players.forEach(p => rolesMap[p.name] = p.roles);
+
+        const activePlayers = data.players.filter(p => p.roles.length > 0 && !p.roles.includes('A')).map(p => p.name);
+        const absentPlayers = data.players.filter(p => p.roles.includes('A')).map(p => p.name);
+        const goalies = activePlayers.filter(name => rolesMap[name].includes('G'));
+        
+        let stats = {};
+        activePlayers.forEach(name => stats[name] = { in: 0, bench: 0 });
+
+        const buildFooter = () => {
+            let div = document.createElement('div');
+            div.className = 'roster-footer';
+            let rosterHTML = `<div><b>ROSTER:</b> ${activePlayers.map(p => formatNamePrint(p, rolesMap[p], true)).join(', ')}</div>`;
+            if (absentPlayers.length > 0) rosterHTML += `<div style="color: #666; margin-top: 5px;"><b>ABSENT:</b> ${absentPlayers.join(', ')}</div>`;
+            div.innerHTML = rosterHTML;
+            return div;
+        };
+
+        let currentAssignments = {};
+        slotOrder.forEach(s => currentAssignments[s] = "");
+        currentAssignments['gk'] = "";
+
+        for (let q = 1; q <= 4; q++) {
+            for (let r = 1; r <= 2; r++) {
+                if (q === 3 && r === 1) {
+                    output.appendChild(buildFooter());
+                    let pb = document.createElement('div');
+                    pb.className = 'page-break';
+                    output.appendChild(pb);
+                }
+
+                const isReset = (q === 1 && r === 1) || (q === 3 && r === 1);
+                let subsDisplay = [];
+                let vacatedByBreak = null;
+                
+                // Smart Goalie Assignment
+                let activeGK = "";
+                let restingGK = "";
+                if (goalies.length === 1) {
+                    activeGK = goalies[0];
+                } else if (goalies.length === 2) {
+                    activeGK = (q <= 2) ? goalies[0] : goalies[1];
+                    restingGK = (q <= 2) ? goalies[1] : goalies[0];
+                } else if (goalies.length > 2) {
+                    activeGK = goalies[(q - 1) % goalies.length];
+                }
+                
+                currentAssignments['gk'] = activeGK;
+                let fieldPool = activePlayers.filter(n => n !== activeGK);
+
+                // Apply Q2S2 Goalie Break ONLY if exactly 2 goalies
+                if (goalies.length === 2 && q === 2 && r === 2 && restingGK) {
+                    fieldPool = fieldPool.filter(n => n !== restingGK);
+                    let slotToVacate = slotOrder.find(s => currentAssignments[s] === restingGK);
+                    if (slotToVacate) {
+                        currentAssignments[slotToVacate] = "";
+                        vacatedByBreak = restingGK; 
+                    }
+                }
+
+                if (isReset) {
+                    let unassigned = [...fieldPool];
+                    slotOrder.forEach(slot => {
+                        let eligible = unassigned.filter(name => isEligible(rolesMap[name], slot));
+                        eligible.sort((a, b) => stats[a].in - stats[b].in); 
+                        if (eligible.length > 0) {
+                            currentAssignments[slot] = eligible[0];
+                            unassigned = unassigned.filter(n => n !== eligible[0]);
+                        } else { currentAssignments[slot] = ""; }
+                    });
+                    let benchedThisShift = unassigned;
+                    subsDisplay = benchedThisShift.length > 0 ? ["<b>Bench:</b> " + benchedThisShift.join(', ')] : ["No Subs"];
+                } else {
+                    // Fill explicitly vacated slots
+                    slotOrder.forEach(slot => {
+                        if (currentAssignments[slot] === "") {
+                            let eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n) && isEligible(rolesMap[n], slot));
+                            eligibleBench.sort((a, b) => stats[a].in - stats[b].in);
+                            if (eligibleBench.length > 0) {
+                                currentAssignments[slot] = eligibleBench[0];
+                                let outgoingText = vacatedByBreak ? vacatedByBreak : "Empty";
+                                subsDisplay.push(`<b>${eligibleBench[0]}</b> <span class="arrow">→</span> ${outgoingText}`);
+                                vacatedByBreak = null; 
+                            }
+                        }
+                    });
+
+                    let onFieldBefore = slotOrder.map(s => currentAssignments[s]).filter(n => n !== "");
+                    let benchBefore = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
+                    
+                    benchBefore.sort((a, b) => stats[a].in - stats[b].in); 
+                    
+                    benchBefore.forEach(incomingPlayer => {
+                        let removableSlots = slotOrder.filter(slot => isEligible(rolesMap[incomingPlayer], slot) && currentAssignments[slot] !== "");
+                        let removablePlayers = removableSlots.map(slot => currentAssignments[slot]);
+                        
+                        removablePlayers.sort((a, b) => stats[b].in - stats[a].in); 
+                        
+                        if (removablePlayers.length > 0) {
+                            let outgoingPlayer = removablePlayers[0];
+                            let slotToSwap = slotOrder.find(s => currentAssignments[s] === outgoingPlayer);
+                            
+                            currentAssignments[slotToSwap] = incomingPlayer;
+                            subsDisplay.push(`<b>${incomingPlayer}</b> <span class="arrow">→</span> ${outgoingPlayer}`);
+                            
+                            onFieldBefore = onFieldBefore.filter(n => n !== outgoingPlayer);
+                            onFieldBefore.push(incomingPlayer); 
+                        }
+                    });
+                    if (subsDisplay.length === 0) subsDisplay = ["No Substitutions"];
+                }
+
+                activePlayers.forEach(name => {
+                    if (Object.values(currentAssignments).includes(name)) stats[name].in++;
+                    else stats[name].bench++;
+                });
+
+                // Build Field UI dynamically based on Format
+                let fieldHTML = formatConfig.layout.map(row => {
+                    let itemsHTML = row.items.map(item => `
+                        <div class="pos ${row.class}">
+                            <span class="label">${item.label}</span>${currentAssignments[item.id] || ''}
+                        </div>
+                    `).join('');
+                    return `<div class="field-row">${itemsHTML}</div>`;
+                }).join('');
+                
+                // Add GK Row independently
+                fieldHTML += `<div class="field-row"><div class="pos row-gk"><span class="label">Goalie</span>${currentAssignments.gk}</div></div>`;
+
+                const card = document.createElement('div');
+                card.className = 'rotation-card';
+                card.innerHTML = `
+                    <h2><span>QUARTER ${q}</span> <span>SHIFT ${r}</span></h2>
+                    <div class="field-layout">${fieldHTML}</div>
+                    <div class="subs">${subsDisplay.join('<br>')}</div>
+                `;
+                output.appendChild(card);
+            }
+        }
+        
+        output.appendChild(buildFooter());
+
+        // Stats Table
+        let tableHTML = `<table class="stats-table"><tr><th>Player Name</th><th>Roles Assigned</th><th>Shifts In</th><th>Shifts Bench</th></tr>`;
+        data.players.forEach(p => {
+            let roles = p.roles;
+            let displayRoles = roles.length === 0 ? 'Unassigned' : roles.map(r => ROLE_MAP[r]).join(', ');
+
+            if (roles.length === 0) {
+                tableHTML += `<tr class="absent-text"><td><b>${p.name}</b></td><td>Unassigned</td><td>0</td><td>0</td></tr>`;
+            } else if (roles.includes('A')) {
+                tableHTML += `<tr class="absent-text"><td><del>${p.name}</del></td><td>Absent</td><td>0</td><td>0</td></tr>`;
+            } else {
+                tableHTML += `<tr><td><b>${p.name}</b></td><td>${displayRoles}</td><td>${stats[p.name].in}</td><td>${stats[p.name].bench}</td></tr>`;
+            }
+        });
+        
+        tableHTML += `</table>`;
+        document.getElementById('statsContainer').innerHTML = tableHTML;
+    }
+</script>
+</body>
+</html>
