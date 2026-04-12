@@ -52,27 +52,30 @@
         .print-btn { background: #1976d2; flex: 2; }
         .print-btn:hover { background: #1565c0; }
 
-        /* App Grid Layout (Print & Screen) */
+        /* Flex Field Layout - 12 Column Grid */
         .grid { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0; }
-        .rotation-card { width: 49%; border: 2px solid #333; padding: 10px; margin-bottom: 15px; background: #fff; box-sizing: border-box; }
-        h2 { margin: -10px -10px 10px -10px; font-size: 0.9rem; background: #333; color: #fff; padding: 6px 12px; display: flex; justify-content: space-between; border-radius: 1px 1px 0 0; }
-        
-        /* Flex Field Layout - Adapts to Formations */
-        .field-layout { display: flex; flex-direction: column; gap: 6px; }
-        .field-row { display: flex; gap: 6px; justify-content: center; }
-        .pos { flex: 1; border: 1px solid #ddd; padding: 6px; text-align: center; font-size: 0.85rem; min-height: 38px; border-radius: 4px; display: flex; flex-direction: column; justify-content: center; background: #fff; }
-        .label { font-weight: bold; font-size: 0.55rem; display: block; color: #888; text-transform: uppercase; margin-bottom: 2px; border-bottom: 1px solid #eee; }
+        .field-layout { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; }
+        .pos { border: 1px solid #ddd; padding: 4px; text-align: center; font-size: 0.8rem; border-radius: 4px; display: flex; flex-direction: column; justify-content: center; background: #fff; }
+        .label { font-weight: bold; font-size: 0.55rem; display: block; color: #888; text-transform: uppercase; margin-bottom: 0; border-bottom: 1px solid #eee; }
         .p-name-abbr { font-weight: normal; font-size: 0.75rem; color: #555; }
         
+        /* Grid Span Classes */
+        .span-6 { grid-column: span 6; }
+        .span-4 { grid-column: span 4; }
+        .span-3 { grid-column: span 3; }
+        .center-6 { grid-column: 4 / 10; }
+
+        /* Reduced Card Padding */
+        .rotation-card { width: 49%; border: 2px solid #333; padding: 6px; margin-bottom: 10px; background: #fff; box-sizing: border-box; }
+        h2 { margin: -6px -6px 6px -6px; font-size: 0.85rem; background: #333; color: #fff; padding: 4px 10px; display: flex; justify-content: space-between; border-radius: 1px 1px 0 0; }
+        .subs { margin-top: 4px; font-size: 0.75rem; padding-top: 4px; border-top: 2px dashed #eee; line-height: 1.2; }
+        .arrow { font-weight: bold; padding: 0 4px; color: #d32f2f; }
+
         /* UI Colors */
         .row-s, .row-f { background: #fff3e0; border-color: #ffb74d; }
         .row-m { background: #e3f2fd; border-color: #64b5f6; }
         .row-d { background: #f5f5f5; border-color: #bdbdbd; }
         .row-gk { background: #fffde7; border-color: #fbc02d; }
-
-        /* Subs Section */
-        .subs { margin-top: 8px; font-size: 0.8rem; padding-top: 6px; border-top: 2px dashed #eee; line-height: 1.3; }
-        .arrow { font-weight: bold; padding: 0 4px; color: #d32f2f; }
         
         /* Modals */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
@@ -231,31 +234,45 @@
     const ROLE_MAP = { 'C': 'Cap', 'G': 'Goal', 'S': 'S', 'F': 'F', 'M': 'M', 'D': 'D', 'A': 'Abs' };
     const STORAGE_KEY = 'v1_SmartSub_Data';
 
-    // Formation Definitions
+    // Formation Definitions (Flattened for CSS Grid)
     const FORMATS = {
         '7v7': {
             slots: ['s', 'lf', 'rf', 'm', 'ld', 'rd'],
             layout: [
-                { class: 'row-s', items: [{id:'s', label:'Striker'}] },
-                { class: 'row-f', items: [{id:'lf', label:'Forward (L)'}, {id:'rf', label:'Forward (R)'}] },
-                { class: 'row-m', items: [{id:'m', label:'Midfield'}] },
-                { class: 'row-d', items: [{id:'ld', label:'Defense (L)'}, {id:'rd', label:'Defense (R)'}] }
+                { class: 'row-s center-6', id: 's', label: 'Striker' },
+                { class: 'row-f span-6', id: 'lf', label: 'Forward (L)' },
+                { class: 'row-f span-6', id: 'rf', label: 'Forward (R)' },
+                { class: 'row-m center-6', id: 'm', label: 'Midfield' },
+                { class: 'row-d span-6', id: 'ld', label: 'Defense (L)' },
+                { class: 'row-d span-6', id: 'rd', label: 'Defense (R)' }
             ]
         },
         '9v9': {
             slots: ['lf', 'rf', 'lm', 'cm', 'rm', 'ld', 'cd', 'rd'],
             layout: [
-                { class: 'row-f', items: [{id:'lf', label:'Forward (L)'}, {id:'rf', label:'Forward (R)'}] },
-                { class: 'row-m', items: [{id:'lm', label:'Mid (L)'}, {id:'cm', label:'Mid (C)'}, {id:'rm', label:'Mid (R)'}] },
-                { class: 'row-d', items: [{id:'ld', label:'Def (L)'}, {id:'cd', label:'Def (C)'}, {id:'rd', label:'Def (R)'}] }
+                { class: 'row-f span-6', id: 'lf', label: 'Forward (L)' },
+                { class: 'row-f span-6', id: 'rf', label: 'Forward (R)' },
+                { class: 'row-m span-4', id: 'lm', label: 'Mid (L)' },
+                { class: 'row-m span-4', id: 'cm', label: 'Mid (C)' },
+                { class: 'row-m span-4', id: 'rm', label: 'Mid (R)' },
+                { class: 'row-d span-4', id: 'ld', label: 'Def (L)' },
+                { class: 'row-d span-4', id: 'cd', label: 'Def (C)' },
+                { class: 'row-d span-4', id: 'rd', label: 'Def (R)' }
             ]
         },
         '11v11': {
             slots: ['lf', 'rf', 'lm', 'lcm', 'rcm', 'rm', 'lb', 'lcb', 'rcb', 'rb'],
             layout: [
-                { class: 'row-f', items: [{id:'lf', label:'Forward (L)'}, {id:'rf', label:'Forward (R)'}] },
-                { class: 'row-m', items: [{id:'lm', label:'Mid (L)'}, {id:'lcm', label:'Mid (LC)'}, {id:'rcm', label:'Mid (RC)'}, {id:'rm', label:'Mid (R)'}] },
-                { class: 'row-d', items: [{id:'lb', label:'Back (L)'}, {id:'lcb', label:'Back (LC)'}, {id:'rcb', label:'Back (RC)'}, {id:'rb', label:'Back (R)'}] }
+                { class: 'row-f span-6', id: 'lf', label: 'Forward (L)' },
+                { class: 'row-f span-6', id: 'rf', label: 'Forward (R)' },
+                { class: 'row-m span-3', id: 'lm', label: 'Mid (L)' },
+                { class: 'row-m span-3', id: 'lcm', label: 'Mid (LC)' },
+                { class: 'row-m span-3', id: 'rcm', label: 'Mid (RC)' },
+                { class: 'row-m span-3', id: 'rm', label: 'Mid (R)' },
+                { class: 'row-d span-3', id: 'lb', label: 'Back (L)' },
+                { class: 'row-d span-3', id: 'lcb', label: 'Back (LC)' },
+                { class: 'row-d span-3', id: 'rcb', label: 'Back (RC)' },
+                { class: 'row-d span-3', id: 'rb', label: 'Back (R)' }
             ]
         }
     };
@@ -516,17 +533,14 @@
                 });
 
                 // Build Field UI dynamically based on Format
-                let fieldHTML = formatConfig.layout.map(row => {
-                    let itemsHTML = row.items.map(item => `
-                        <div class="pos ${row.class}">
-                            <span class="label">${item.label}</span>${currentAssignments[item.id] || ''}
-                        </div>
-                    `).join('');
-                    return `<div class="field-row">${itemsHTML}</div>`;
-                }).join('');
+                let fieldHTML = formatConfig.layout.map(item => `
+                    <div class="pos ${item.class}">
+                        <span class="label">${item.label}</span>${currentAssignments[item.id] || ''}
+                    </div>
+                `).join('');
                 
-                // Add GK Row independently
-                fieldHTML += `<div class="field-row"><div class="pos row-gk"><span class="label">Goalie</span>${currentAssignments.gk}</div></div>`;
+                // Add GK independently with the center-6 class to match the Striker/Midfield width
+                fieldHTML += `<div class="pos row-gk center-6"><span class="label">Goalie</span>${currentAssignments.gk}</div>`;
 
                 const card = document.createElement('div');
                 card.className = 'rotation-card';
