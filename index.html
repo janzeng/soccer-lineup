@@ -79,17 +79,12 @@
         .modal { background: white; padding: 25px; border-radius: 12px; max-width: 500px; width: 90%; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
         .modal h3 { margin-top: 0; color: #1976d2; }
         .modal-close { background: #333; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 15px; }
-        .modal textarea { width: 100%; height: 100px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 12px; box-sizing: border-box; margin-bottom: 10px; resize: vertical; }
-
-        /* Print Specifics */
-        .print-header { display: none; text-align: center; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 10px; }
-        .print-header h1 { margin: 0 0 5px 0; font-size: 1.5rem; }
-        .print-header span { font-size: 1rem; color: #555; }
-        .roster-footer { display: none; width: 100%; border-top: 2px solid #000; padding-top: 10px; margin-top: 10px; font-size: 0.85rem; text-align: center; }
-        .roster-footer div { margin-bottom: 4px; }
-        .page-break { display: none; }
+        .modal textarea { width: 100%; height: 200px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 12px; box-sizing: border-box; margin-bottom: 10px; resize: vertical; }
 
         /* Print Specifics & Safari Fixes */
+        .print-header { display: none; text-align: center; margin-bottom: 10px; border-bottom: 2px solid #000; padding-bottom: 5px; }
+        .print-header h2 { margin: 0; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 1px; color: #000; background: transparent; padding: 0; }
+        
         @media print { 
             .no-print, .modal-overlay { display: none !important; } 
             body { background: white; margin: 0; padding: 0; }
@@ -103,19 +98,19 @@
                 display: block;
                 float: left; 
                 width: 48%; 
-                margin: 0 1% 15px 1%; /* Spacing so two fit perfectly per row */
+                margin: 0 1% 15px 1%; 
                 border: 2px solid black; 
-                page-break-inside: avoid; /* Stops a single card from splitting in half */
+                page-break-inside: avoid; 
                 break-inside: avoid;
             }
             
             /* Clear floats and force the page break */
             .page-break { 
                 display: block; 
-                clear: both; /* Essential for floats */
+                clear: both; 
                 height: 0; 
-                page-break-after: always; /* Legacy Safari command */
-                break-after: page;        /* Modern command */
+                page-break-after: always; 
+                break-after: page;        
                 margin: 0; 
                 border: none; 
             }
@@ -195,9 +190,8 @@
     <div id="statsContainer"></div>
 </div>
 
-<div class="print-header" id="printHeader">
-    <h1 id="printTeamName">Team Name</h1>
-    <span id="printFormat">7v7 Rotation Matrix</span>
+<div class="print-header">
+    <h2 id="printHeaderTitle">Team Name — 7v7</h2>
 </div>
 
 <div id="output" class="grid"></div>
@@ -205,8 +199,8 @@
 <div class="modal-overlay" id="importModal">
     <div class="modal">
         <h3>Import Roster Data</h3>
-        <p style="font-size: 0.9rem; color: #555;">Paste the roster code you copied from another device here to instantly load your team.</p>
-        <textarea id="importText" placeholder="Paste data here..."></textarea>
+        <p style="font-size: 0.9rem; color: #555;">Paste the JSON roster code you exported here to instantly load your team.</p>
+        <textarea id="importText" placeholder='{\n  "teamName": "Pizza Eaters",\n  "format": "7v7",\n  "players": [...]\n}'></textarea>
         <button class="action-btn" style="width: 100%; margin-bottom: 10px;" onclick="importData()">Load Data</button>
         <button class="modal-close" onclick="closeModal('importModal')">Cancel</button>
     </div>
@@ -336,18 +330,18 @@
         }
     }
 
-// --- Updated Import / Export (Plain Text JSON) ---
+    // --- Import / Export ---
     function exportData() {
         let data = saveUI();
         if (data.players.length === 0) { alert("Add players before exporting."); return; }
         
-        // Convert to pretty-printed JSON string
         let plainTextJson = JSON.stringify(data, null, 2);
         
-        // Use a prompt so the user can see and copy the text directly
-        // Also tries to copy to clipboard automatically
         navigator.clipboard.writeText(plainTextJson).then(() => {
             alert("Roster JSON copied to clipboard! You can also save this text in a note or email.");
+        }).catch(err => {
+            // Fallback for older browsers
+            prompt("Copy this roster text manually:", plainTextJson);
         });
     }
 
@@ -355,7 +349,6 @@
         let text = document.getElementById('importText').value.trim();
         if (!text) return;
         try {
-            // Parse the plain text JSON
             let decoded = JSON.parse(text);
             
             if (decoded.format && decoded.players) {
@@ -396,10 +389,9 @@
         const output = document.getElementById('output');
         output.innerHTML = "";
 
-        // Update Print Header
+        // Update Compact Print Header
         let tName = data.teamName || "Unnamed Team";
-        document.getElementById('printTeamName').innerText = tName;
-        document.getElementById('printFormat').innerText = `${data.format} Rotation Matrix`;
+        document.getElementById('printHeaderTitle').innerText = `${tName} — ${data.format}`;
 
         const formatConfig = FORMATS[data.format];
         const slotOrder = formatConfig.slots;
