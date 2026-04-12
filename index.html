@@ -49,8 +49,12 @@
         button.action-btn:hover { background: #1b5e20; }
         button.reset-btn { flex: 1; background: #d32f2f; }
         button.reset-btn:hover { background: #b71c1c; }
-        .print-btn { background: #1976d2; flex: 2; }
+        .print-btn { background: #1976d2; flex: 1; margin-bottom: 0; }
         .print-btn:hover { background: #1565c0; }
+        
+        .print-toggle-wrapper { flex: 1.5; display: flex; align-items: center; background: #fff; padding: 0 15px; border-radius: 6px; border: 1px solid #ccc; justify-content: center; }
+        .print-toggle-wrapper input { transform: scale(1.3); margin-right: 10px; cursor: pointer; }
+        .print-toggle-wrapper label { font-size: 0.9rem; font-weight: bold; cursor: pointer; color: #333; margin: 0; }
 
         /* Flex Field Layout - 12 Column Grid */
         .grid { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0; }
@@ -72,11 +76,11 @@
         .arrow { font-weight: bold; padding: 0 4px; color: #d32f2f; }
 
         /* UI Colors */
-        .row-s { background: #ffebee; border-color: #e57373; } /* Soft Red */
-        .row-f { background: #fff3e0; border-color: #ffb74d; } /* Orange */
-        .row-m { background: #e3f2fd; border-color: #64b5f6; } /* Blue */
-        .row-d { background: #e8f5e9; border-color: #81c784; } /* Green */
-        .row-gk { background: #fffde7; border-color: #fbc02d; } /* Yellow */
+        .row-s { background: #ffebee; border-color: #e57373; } 
+        .row-f { background: #fff3e0; border-color: #ffb74d; } 
+        .row-m { background: #e3f2fd; border-color: #64b5f6; } 
+        .row-d { background: #e8f5e9; border-color: #81c784; } 
+        .row-gk { background: #fffde7; border-color: #fbc02d; } 
         
         /* Modals */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
@@ -86,14 +90,24 @@
         .modal textarea { width: 100%; height: 200px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 12px; box-sizing: border-box; margin-bottom: 10px; resize: vertical; }
 
         /* Print Specifics & Safari Fixes */
-        .print-header { display: none; text-align: center; margin-bottom: 10px; border-bottom: 2px solid #000; padding-bottom: 5px; }
-        .print-header h2 { margin: 0; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 1px; color: #000; background: transparent; padding: 0; }
+        .print-header { display: none; }
         .roster-footer { display: none; }
         
         @media print { 
             .no-print, .modal-overlay { display: none !important; } 
             body { background: white; margin: 0; padding: 0; }
-            .print-header { display: block; }
+            
+            /* Dynamic Print Headers */
+            .print-header { 
+                display: block; 
+                width: 100%; 
+                margin-bottom: 15px; 
+                border-bottom: 2px solid #000; 
+                padding-bottom: 5px; 
+                overflow: auto; /* Clearfix for floats */
+            }
+            .print-header h2 { float: left; margin: 0; font-size: 1.2rem; color: #000; background: transparent !important; padding: 0; border: none; }
+            .print-header .half-label { float: right; margin: 0; font-size: 1.2rem; font-weight: bold; color: #000; }
             
             /* SAFARI FIX: Turn off Flexbox when printing */
             .grid { display: block; }
@@ -134,10 +148,15 @@
             }
 
             /* Black & White styling for the printout */
-            h2 { background: white !important; color: black !important; border-bottom: 2px solid black; }
+            .rotation-card h2 { background: white !important; color: black !important; border-bottom: 2px solid black; }
             .pos, .row-s, .row-f, .row-m, .row-d, .row-gk { background: white !important; border: 1px solid black !important; }
             .label { color: black !important; border-bottom: 1px solid black !important; }
             .arrow { color: black; }
+            
+            /* Summary Page Stats Table styling for Print */
+            .summary-page-wrapper { clear: both; width: 100%; }
+            .summary-page-wrapper .stats-table th, .summary-page-wrapper .stats-table td { border: 1px solid #000 !important; color: #000; }
+            .summary-page-wrapper .stats-table th { background: #f0f0f0 !important; }
         }
     </style>
 </head>
@@ -188,15 +207,15 @@
     
     <div class="btn-container">
         <button class="action-btn" onclick="generate()">Generate Rotation</button>
+        <div class="print-toggle-wrapper">
+            <input type="checkbox" id="includeSummary" onchange="saveUI()">
+            <label for="includeSummary">Include Summary Page</label>
+        </div>
         <button class="action-btn print-btn" onclick="window.print()">Print Lineups</button>
         <button class="action-btn reset-btn" onclick="clearRoster()">Clear Roster</button>
     </div>
 
     <div id="statsContainer"></div>
-</div>
-
-<div class="print-header">
-    <h2 id="printHeaderTitle">Team Name — 7v7</h2>
 </div>
 
 <div id="output" class="grid"></div>
@@ -287,10 +306,11 @@
 
     // --- Data Management ---
     function loadUI() {
-        let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { teamName: "", format: "7v7", players: [] };
+        let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { teamName: "", format: "7v7", includeSummary: false, players: [] };
         
         document.getElementById('teamName').value = data.teamName || "";
         document.getElementById('fieldFormat').value = data.format || "7v7";
+        document.getElementById('includeSummary').checked = data.includeSummary || false;
         
         const tbody = document.getElementById('playerList');
         tbody.innerHTML = '';
@@ -302,6 +322,7 @@
     function saveUI() {
         let teamName = document.getElementById('teamName').value.trim();
         let format = document.getElementById('fieldFormat').value;
+        let includeSummary = document.getElementById('includeSummary').checked;
         let rows = document.querySelectorAll('#playerList tr');
         let players = [];
 
@@ -313,7 +334,7 @@
             }
         });
 
-        let data = { teamName, format, players };
+        let data = { teamName, format, includeSummary, players };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         return data;
     }
@@ -359,7 +380,6 @@
         navigator.clipboard.writeText(plainTextJson).then(() => {
             alert("Roster JSON copied to clipboard! You can also save this text in a note or email.");
         }).catch(err => {
-            // Fallback for older browsers
             prompt("Copy this roster text manually:", plainTextJson);
         });
     }
@@ -369,7 +389,6 @@
         if (!text) return;
         try {
             let decoded = JSON.parse(text);
-            
             if (decoded.format && decoded.players) {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(decoded));
                 loadUI();
@@ -386,7 +405,6 @@
     function isEligible(roles, slot) {
         if (!roles || roles.length === 0 || roles.includes('A')) return false;
         
-        // Match specific checkbox criteria based on the ID of the field slot
         if (slot === 'gk') return roles.includes('G');
         if (['s'].includes(slot)) return roles.includes('S') || roles.includes('F'); 
         if (['lf', 'rf'].includes(slot)) return roles.includes('F') || roles.includes('S');
@@ -403,19 +421,23 @@
         return `${name} <span class="p-name-abbr">[${abbrStr}]</span>`;
     }
 
+    function buildPrintHeader(teamName, format, rightText) {
+        let div = document.createElement('div');
+        div.className = 'print-header';
+        let titleStr = `${teamName.toUpperCase()} — ${format.toLowerCase()}`;
+        div.innerHTML = `<h2>${titleStr}</h2>${rightText ? `<div class="half-label">${rightText}</div>` : ''}`;
+        return div;
+    }
+
     function generate() {
         const data = saveUI();
         const output = document.getElementById('output');
         output.innerHTML = "";
 
-        // Update Compact Print Header
         let tName = data.teamName || "Unnamed Team";
-        document.getElementById('printHeaderTitle').innerText = `${tName} — ${data.format}`;
-
         const formatConfig = FORMATS[data.format];
         const slotOrder = formatConfig.slots;
 
-        // Active vs Absent Mapping
         let rolesMap = {};
         data.players.forEach(p => rolesMap[p.name] = p.roles);
 
@@ -440,19 +462,24 @@
         currentAssignments['gk'] = "";
 
         for (let q = 1; q <= 4; q++) {
-            for (let r = 1; r <= 2; r++) {
-                if (q === 3 && r === 1) {
-                    output.appendChild(buildFooter());
-                    let pb = document.createElement('div');
-                    pb.className = 'page-break';
-                    output.appendChild(pb);
-                }
+            
+            // Dynamic Header Injection
+            if (q === 1) {
+                output.appendChild(buildPrintHeader(tName, data.format, '1st Half'));
+            }
+            if (q === 3) {
+                output.appendChild(buildFooter()); // Close out the 1st half page
+                let pb = document.createElement('div');
+                pb.className = 'page-break';
+                output.appendChild(pb);
+                output.appendChild(buildPrintHeader(tName, data.format, '2nd Half'));
+            }
 
+            for (let r = 1; r <= 2; r++) {
                 const isReset = (q === 1 && r === 1) || (q === 3 && r === 1);
                 let subsDisplay = [];
                 let vacatedByBreak = null;
                 
-                // Smart Goalie Assignment
                 let activeGK = "";
                 let restingGK = "";
                 if (goalies.length === 1) {
@@ -467,7 +494,6 @@
                 currentAssignments['gk'] = activeGK;
                 let fieldPool = activePlayers.filter(n => n !== activeGK);
 
-                // Apply Q2S2 Goalie Break ONLY if exactly 2 goalies
                 if (goalies.length === 2 && q === 2 && r === 2 && restingGK) {
                     fieldPool = fieldPool.filter(n => n !== restingGK);
                     let slotToVacate = slotOrder.find(s => currentAssignments[s] === restingGK);
@@ -490,7 +516,6 @@
                     let benchedThisShift = unassigned;
                     subsDisplay = benchedThisShift.length > 0 ? ["<b>Bench:</b> " + benchedThisShift.join(', ')] : ["No Subs"];
                 } else {
-                    // Fill explicitly vacated slots
                     slotOrder.forEach(slot => {
                         if (currentAssignments[slot] === "") {
                             let eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n) && isEligible(rolesMap[n], slot));
@@ -534,14 +559,12 @@
                     else stats[name].bench++;
                 });
 
-                // Build Field UI dynamically based on Format
                 let fieldHTML = formatConfig.layout.map(item => `
                     <div class="pos ${item.class}">
                         <span class="label">${item.label}</span>${currentAssignments[item.id] || ''}
                     </div>
                 `).join('');
                 
-                // Add GK independently with the center-6 class to match the Striker/Midfield width
                 fieldHTML += `<div class="pos row-gk center-6"><span class="label">Goalie</span>${currentAssignments.gk}</div>`;
 
                 const card = document.createElement('div');
@@ -555,9 +578,9 @@
             }
         }
         
-        output.appendChild(buildFooter());
+        output.appendChild(buildFooter()); // Close out the 2nd half page
 
-        // Stats Table
+        // Build the Stats Table
         let tableHTML = `<table class="stats-table"><tr><th>Player Name</th><th>Roles Assigned</th><th>Shifts In</th><th>Shifts Bench</th></tr>`;
         data.players.forEach(p => {
             let roles = p.roles;
@@ -571,9 +594,24 @@
                 tableHTML += `<tr><td><b>${p.name}</b></td><td>${displayRoles}</td><td>${stats[p.name].in}</td><td>${stats[p.name].bench}</td></tr>`;
             }
         });
-        
         tableHTML += `</table>`;
+        
+        // Render to Web View
         document.getElementById('statsContainer').innerHTML = tableHTML;
+
+        // Render to 3rd Print Page if requested
+        if (data.includeSummary) {
+            let pb = document.createElement('div');
+            pb.className = 'page-break';
+            output.appendChild(pb);
+            
+            output.appendChild(buildPrintHeader(tName, data.format, '')); // Title with no right text
+            
+            let summaryWrapper = document.createElement('div');
+            summaryWrapper.className = 'summary-page-wrapper';
+            summaryWrapper.innerHTML = tableHTML;
+            output.appendChild(summaryWrapper);
+        }
     }
 </script>
 </body>
