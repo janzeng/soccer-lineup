@@ -213,8 +213,6 @@
         </div>
         <button class="action-btn print-btn" onclick="window.print()">Print Lineups</button>        <button class="action-btn reset-btn" onclick="clearRoster()">Clear Roster</button>
     </div>
-
-    <div id="statsContainer"></div>
 </div>
 
 <div id="output" class="grid"></div>
@@ -604,9 +602,6 @@
             }
         });
         tableHTML += `</table>`;
-        
-        // Render to Web View
-        document.getElementById('statsContainer').innerHTML = tableHTML;
 
         // Render to 3rd Print Page if requested
         if (data.includeSummary) {
