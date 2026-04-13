@@ -438,72 +438,88 @@ function generate() {
                 }
 
                 if (isReset) {
-                    let unassigned = [...fieldPool];
+                    // FAIR PLAY OVERRIDE: Mathematically sort who MUST be on the field
+                    let sortedPool = [...fieldPool].sort((a, b) => stats[a].in - stats[b].in);
+                    let playersToField = sortedPool.slice(0, slotOrder.length);
+                    let playersToBench = sortedPool.slice(slotOrder.length);
+                    
+                    let unassignedPlayers = [...playersToField];
+                    
+                    // Try to match preferences first
                     slotOrder.forEach(slot => {
-                        let eligible = unassigned.filter(name => isEligible(rolesMap[name], slot));
-                        eligible.sort((a, b) => stats[a].in - stats[b].in); 
-                        
-                        if (eligible.length > 0) {
-                            currentAssignments[slot] = eligible[0];
-                            unassigned = unassigned.filter(n => n !== eligible[0]);
-                        } else { 
-                            if (unassigned.length > 0) {
-                                unassigned.sort((a, b) => stats[a].in - stats[b].in);
-                                currentAssignments[slot] = unassigned[0];
-                                unassigned = unassigned.filter(n => n !== unassigned[0]);
-                            } else {
-                                currentAssignments[slot] = ""; 
+                        let eligibleIndex = unassignedPlayers.findIndex(name => isEligible(rolesMap[name], slot));
+                        if (eligibleIndex !== -1) {
+                            currentAssignments[slot] = unassignedPlayers[eligibleIndex];
+                            unassignedPlayers.splice(eligibleIndex, 1);
+                        } else {
+                            currentAssignments[slot] = ""; 
+                        }
+                    });
+                    
+                    // Force the remaining unassigned players into the remaining spots to ensure even play
+                    slotOrder.forEach(slot => {
+                        if (currentAssignments[slot] === "") {
+                            if (unassignedPlayers.length > 0) {
+                                currentAssignments[slot] = unassignedPlayers[0];
+                                unassignedPlayers.shift();
                             }
                         }
                     });
-                    let benchedThisShift = unassigned;
-                    subsDisplay = benchedThisShift.length > 0 ? ["<b>Bench:</b> " + benchedThisShift.join(', ')] : ["No Subs"];
+                    
+                    subsDisplay = playersToBench.length > 0 ? ["<b>Bench:</b> " + playersToBench.join(', ')] : ["No Subs"];
+                
                 } else {
+                    // Fill explicitly vacated spots (like goalies taking a break)
                     slotOrder.forEach(slot => {
                         if (currentAssignments[slot] === "") {
-                            let eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n) && isEligible(rolesMap[n], slot));
+                            let eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
                             eligibleBench.sort((a, b) => stats[a].in - stats[b].in);
                             
-                            if (eligibleBench.length === 0) {
-                                eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
-                                eligibleBench.sort((a, b) => stats[a].in - stats[b].in);
-                            }
+                            let prefBench = eligibleBench.filter(n => isEligible(rolesMap[n], slot));
+                            let playerToInsert = prefBench.length > 0 ? prefBench[0] : eligibleBench[0];
 
-                            if (eligibleBench.length > 0) {
-                                currentAssignments[slot] = eligibleBench[0];
+                            if (playerToInsert) {
+                                currentAssignments[slot] = playerToInsert;
                                 let outgoingText = vacatedByBreak ? vacatedByBreak : "Empty";
-                                subsDisplay.push(`<b>${eligibleBench[0]}</b> <span class="arrow">→</span> ${outgoingText}`);
+                                subsDisplay.push(`<b>${playerToInsert}</b> <span class="arrow">→</span> ${outgoingText}`);
                                 vacatedByBreak = null; 
                             }
                         }
                     });
 
-                    let onFieldBefore = slotOrder.map(s => currentAssignments[s]).filter(n => n !== "");
+                    // Sub remaining bench players into the field
                     let benchBefore = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
-                    
                     benchBefore.sort((a, b) => stats[a].in - stats[b].in); 
                     
-                    benchBefore.forEach(incomingPlayer => {
-                        let removableSlots = slotOrder.filter(slot => isEligible(rolesMap[incomingPlayer], slot) && currentAssignments[slot] !== "");
+                    let numToSub = Math.min(benchBefore.length, slotOrder.length);
+                    let playersToBringIn = benchBefore.slice(0, numToSub);
+                    
+                    playersToBringIn.forEach(incomingPlayer => {
+                        let currentField = slotOrder.map(s => currentAssignments[s]).filter(n => n !== "");
                         
-                        if (removableSlots.length === 0) {
-                            removableSlots = slotOrder.filter(slot => currentAssignments[slot] !== "");
-                        }
-
-                        let removablePlayers = removableSlots.map(slot => currentAssignments[slot]);
-                        removablePlayers.sort((a, b) => stats[b].in - stats[a].in); 
+                        // FAIR PLAY OVERRIDE: Identify the exact players on the field who have the MOST shifts
+                        let maxShiftsOnField = Math.max(...currentField.map(n => stats[n].in));
+                        let candidatesToSit = currentField.filter(n => stats[n].in === maxShiftsOnField);
                         
-                        if (removablePlayers.length > 0) {
-                            let outgoingPlayer = removablePlayers[0];
-                            let slotToSwap = slotOrder.find(s => currentAssignments[s] === outgoingPlayer);
-                            
-                            currentAssignments[slotToSwap] = incomingPlayer;
-                            subsDisplay.push(`<b>${incomingPlayer}</b> <span class="arrow">→</span> ${outgoingPlayer}`);
-                            
-                            onFieldBefore = onFieldBefore.filter(n => n !== outgoingPlayer);
-                            onFieldBefore.push(incomingPlayer); 
+                        // Can we swap out one of these max-shift players AND match the incoming player's preference?
+                        let eligibleSlots = slotOrder.filter(slot => {
+                            let occupant = currentAssignments[slot];
+                            return occupant && candidatesToSit.includes(occupant) && isEligible(rolesMap[incomingPlayer], slot);
+                        });
+                        
+                        let slotToSwap;
+                        if (eligibleSlots.length > 0) {
+                            slotToSwap = eligibleSlots[0];
+                        } else {
+                            // If preferences don't align, force the swap anyway. Playing time > Preference.
+                            slotToSwap = slotOrder.find(slot => currentAssignments[slot] === candidatesToSit[0]);
                         }
+                        
+                        let outgoingPlayer = currentAssignments[slotToSwap];
+                        currentAssignments[slotToSwap] = incomingPlayer;
+                        subsDisplay.push(`<b>${incomingPlayer}</b> <span class="arrow">→</span> ${outgoingPlayer}`);
                     });
+                    
                     if (subsDisplay.length === 0) subsDisplay = ["No Subs"];
                 }
             }
@@ -548,7 +564,6 @@ function generate() {
     
     printHTMLStr += footerHTML;
 
-    // Strict Explicit Preference Checking
     let requiredRoleNames = new Set(['Goalie']); 
     formatConfig.slots.forEach(slot => {
         requiredRoleNames.add(SLOTS_TO_ROLES[slot]);
@@ -588,7 +603,6 @@ function generate() {
         let roles = p.roles;
         let actualPlayed = Array.from(playedPositions[p.name] || []);
         
-        // Sort Actual Played positions down the field
         actualPlayed.sort((a, b) => (SORT_ORDER[a] || 99) - (SORT_ORDER[b] || 99));
         
         let displayRoles = actualPlayed.length > 0 ? actualPlayed.join(', ') : 'None';
