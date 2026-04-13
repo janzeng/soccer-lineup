@@ -369,11 +369,28 @@ function generate() {
     
     let stats = {};
     let playedPositions = {}; 
+    let remainingGoalieShifts = {};
     
     activePlayers.forEach(name => {
         stats[name] = { in: 0, bench: 0 };
         playedPositions[name] = new Set();
+        remainingGoalieShifts[name] = 0;
     });
+
+    // LOOK-AHEAD: Pre-calculate guaranteed Goalie shifts to adjust Virtual Shift counts
+    for (let q = 1; q <= 4; q++) {
+        for (let r = 1; r <= 2; r++) {
+            let scheduledGK = "";
+            if (goalies.length === 1) scheduledGK = goalies[0];
+            else if (goalies.length === 2) scheduledGK = (q <= 2) ? goalies[0] : goalies[1];
+            else scheduledGK = goalies[(q - 1) % goalies.length];
+            
+            if (scheduledGK) remainingGoalieShifts[scheduledGK]++;
+        }
+    }
+
+    // Virtual Shift Counter = Actual Shifts Played + Guaranteed Future Goalie Shifts
+    const vIn = (p) => stats[p].in + remainingGoalieShifts[p];
 
     let footerHTML = `<div class="roster-footer"><div><b>ROSTER:</b> ${activePlayers.map(p => formatNamePrint(p, rolesMap[p], true)).join(', ')}</div>`;
     if (absentPlayers.length > 0) footerHTML += `<div style="color: #666; margin-top: 5px;"><b>ABSENT:</b> ${absentPlayers.join(', ')}</div>`;
@@ -425,8 +442,6 @@ function generate() {
                 
                 currentAssignments['gk'] = activeGK;
                 
-                // --- THE "GHOST GOALIE" FIX ---
-                // If the new goalie was on the field last shift, pull them off the field!
                 slotOrder.forEach(slot => {
                     if (currentAssignments[slot] === activeGK) {
                         currentAssignments[slot] = "";
@@ -447,7 +462,8 @@ function generate() {
 
                 if (isReset) {
                     let sortedPool = [...fieldPool].sort((a, b) => {
-                        if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
+                        if (vIn(a) !== vIn(b)) return vIn(a) - vIn(b);
+                        if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
                         if (a === restingGK && q <= 2) return -1;
                         if (b === restingGK && q <= 2) return 1;
                         return 0;
@@ -483,7 +499,12 @@ function generate() {
                     slotOrder.forEach(slot => {
                         if (currentAssignments[slot] === "") {
                             let eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
-                            eligibleBench.sort((a, b) => stats[a].in - stats[b].in);
+                            
+                            eligibleBench.sort((a, b) => {
+                                if (vIn(a) !== vIn(b)) return vIn(a) - vIn(b);
+                                if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
+                                return 0;
+                            });
                             
                             let prefBench = eligibleBench.filter(n => isEligible(rolesMap[n], slot));
                             let playerToInsert = prefBench.length > 0 ? prefBench[0] : eligibleBench[0];
@@ -498,7 +519,12 @@ function generate() {
                     });
 
                     let benchBefore = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
-                    benchBefore.sort((a, b) => stats[a].in - stats[b].in); 
+                    
+                    benchBefore.sort((a, b) => {
+                        if (vIn(a) !== vIn(b)) return vIn(a) - vIn(b);
+                        if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
+                        return 0;
+                    });
                     
                     let numToSub = Math.min(benchBefore.length, slotOrder.length);
                     let playersToBringIn = benchBefore.slice(0, numToSub);
@@ -506,8 +532,19 @@ function generate() {
                     playersToBringIn.forEach(incomingPlayer => {
                         let currentField = slotOrder.map(s => currentAssignments[s]).filter(n => n !== "");
                         
-                        let maxShiftsOnField = Math.max(...currentField.map(n => stats[n].in));
-                        let candidatesToSit = currentField.filter(n => stats[n].in === maxShiftsOnField);
+                        let sortedField = [...currentField].sort((a, b) => {
+                            if (vIn(a) !== vIn(b)) return vIn(b) - vIn(a); 
+                            if (stats[a].bench !== stats[b].bench) return stats[a].bench - stats[b].bench; 
+                            if (a === restingGK && q <= 2) return 1; 
+                            if (b === restingGK && q <= 2) return -1;
+                            return 0;
+                        });
+                        
+                        let topCandidate = sortedField[0];
+                        let candidatesToSit = sortedField.filter(n => 
+                            vIn(n) === vIn(topCandidate) && 
+                            stats[n].bench === stats[topCandidate].bench
+                        );
                         
                         if (candidatesToSit.length > 1 && q <= 2 && candidatesToSit.includes(restingGK)) {
                             candidatesToSit = candidatesToSit.filter(n => n !== restingGK);
@@ -539,6 +576,8 @@ function generate() {
                 else stats[name].bench++;
             });
             
+            if (currentAssignments['gk']) remainingGoalieShifts[currentAssignments['gk']]--;
+
             Object.entries(currentAssignments).forEach(([slot, player]) => {
                 if (player && playedPositions[player]) {
                     playedPositions[player].add(SLOTS_TO_ROLES[slot]);
