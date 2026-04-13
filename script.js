@@ -439,7 +439,18 @@ function generate() {
 
                 if (isReset) {
                     // FAIR PLAY OVERRIDE: Mathematically sort who MUST be on the field
-                    let sortedPool = [...fieldPool].sort((a, b) => stats[a].in - stats[b].in);
+                    let sortedPool = [...fieldPool].sort((a, b) => {
+                        // 1. Sort by number of shifts already played
+                        if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
+                        
+                        // 2. TIE BREAKER: Protect the resting goalie in the first half 
+                        // from sitting early, since they are forced to sit in Q2S2.
+                        if (a === restingGK && q <= 2) return -1;
+                        if (b === restingGK && q <= 2) return 1;
+                        
+                        return 0;
+                    });
+                    
                     let playersToField = sortedPool.slice(0, slotOrder.length);
                     let playersToBench = sortedPool.slice(slotOrder.length);
                     
@@ -500,6 +511,11 @@ function generate() {
                         // FAIR PLAY OVERRIDE: Identify the exact players on the field who have the MOST shifts
                         let maxShiftsOnField = Math.max(...currentField.map(n => stats[n].in));
                         let candidatesToSit = currentField.filter(n => stats[n].in === maxShiftsOnField);
+                        
+                        // TIE BREAKER: Protect the resting goalie in the first half from being subbed out early
+                        if (candidatesToSit.length > 1 && q <= 2 && candidatesToSit.includes(restingGK)) {
+                            candidatesToSit = candidatesToSit.filter(n => n !== restingGK);
+                        }
                         
                         // Can we swap out one of these max-shift players AND match the incoming player's preference?
                         let eligibleSlots = slotOrder.filter(slot => {
