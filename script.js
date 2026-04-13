@@ -44,6 +44,13 @@ const FORMATS = {
     }
 };
 
+// Generic Role Mapping for the Summary Table and Warnings
+const SLOTS_TO_ROLES = {
+    'gk': 'Goalie', 's': 'Striker', 'lf': 'Forward', 'rf': 'Forward',
+    'm': 'Midfield', 'lm': 'Midfield', 'cm': 'Midfield', 'rm': 'Midfield', 'lcm': 'Midfield', 'rcm': 'Midfield',
+    'ld': 'Defense', 'cd': 'Defense', 'rd': 'Defense', 'lb': 'Defense', 'lcb': 'Defense', 'rcb': 'Defense', 'rb': 'Defense'
+};
+
 window.onload = () => { 
     checkURLParams();
     loadUI(); 
@@ -353,10 +360,20 @@ function generate() {
     const activePlayers = processingPlayers.filter(p => !p.roles.includes('A')).map(p => p.name);
     const absentPlayers = processingPlayers.filter(p => p.roles.includes('A') && !p.name.startsWith("Player ")).map(p => p.name);
     
-    const goalies = activePlayers.filter(name => rolesMap[name].includes('G') || rolesMap[name].length === 0);
+    let goalies = activePlayers.filter(name => rolesMap[name].includes('G') || rolesMap[name].length === 0);
+    
+    // FIX: If no one wants to be goalie, force everyone to share the burden
+    if (goalies.length === 0 && activePlayers.length > 0) {
+        goalies = [...activePlayers];
+    }
     
     let stats = {};
-    activePlayers.forEach(name => stats[name] = { in: 0, bench: 0 });
+    let playedPositions = {}; // FIX: Track actual positions played
+    
+    activePlayers.forEach(name => {
+        stats[name] = { in: 0, bench: 0 };
+        playedPositions[name] = new Set();
+    });
 
     let footerHTML = `<div class="roster-footer"><div><b>ROSTER:</b> ${activePlayers.map(p => formatNamePrint(p, rolesMap[p], true)).join(', ')}</div>`;
     if (absentPlayers.length > 0) footerHTML += `<div style="color: #666; margin-top: 5px;"><b>ABSENT:</b> ${absentPlayers.join(', ')}</div>`;
@@ -369,7 +386,7 @@ function generate() {
     let webHTMLStr = "";
     let printHTMLStr = "";
 
-    // If we have exactly the minimum required players (or fewer), lock the positions between halves
+    // FIX: Lock positions for exactly-staffed or under-staffed games
     let isNoSubsGame = (activePlayers.length <= formatMin);
 
     for (let q = 1; q <= 4; q++) {
@@ -393,10 +410,9 @@ function generate() {
             let subsDisplay = [];
 
             if (isNoSubsGame && !isReset) {
-                // LOCK SHIFT: Keep everyone exactly where they were. No Math required.
+                // Locked Shift: Bypass all math and Goalie swaps. Maintain exact same layout.
                 subsDisplay = ["No Subs"];
             } else {
-                // NORMAL LOGIC: Process Subs and Shifts
                 let vacatedByBreak = null;
                 let activeGK = "";
                 let restingGK = "";
@@ -412,7 +428,7 @@ function generate() {
                 currentAssignments['gk'] = activeGK;
                 let fieldPool = activePlayers.filter(n => n !== activeGK);
 
-                // Safety Check: Can we actually afford to give the goalie a break?
+                // Ensure we have enough players to actually give the goalie a break
                 let canAffordBreak = (fieldPool.length - 1 >= slotOrder.length);
 
                 if (goalies.length === 2 && q === 2 && r === 2 && restingGK && canAffordBreak) {
@@ -434,7 +450,7 @@ function generate() {
                             currentAssignments[slot] = eligible[0];
                             unassigned = unassigned.filter(n => n !== eligible[0]);
                         } else { 
-                            // Fallback: If no one is eligible, force ANY unassigned player into the slot
+                            // Fallback: Force remaining unassigned player into empty slot
                             if (unassigned.length > 0) {
                                 unassigned.sort((a, b) => stats[a].in - stats[b].in);
                                 currentAssignments[slot] = unassigned[0];
@@ -452,7 +468,7 @@ function generate() {
                             let eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n) && isEligible(rolesMap[n], slot));
                             eligibleBench.sort((a, b) => stats[a].in - stats[b].in);
                             
-                            // Fallback: If no eligible sub exists for the empty spot, grab ANY bench player
+                            // Fallback: Pick any bench player if no eligible player exists
                             if (eligibleBench.length === 0) {
                                 eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
                                 eligibleBench.sort((a, b) => stats[a].in - stats[b].in);
@@ -475,7 +491,7 @@ function generate() {
                     benchBefore.forEach(incomingPlayer => {
                         let removableSlots = slotOrder.filter(slot => isEligible(rolesMap[incomingPlayer], slot) && currentAssignments[slot] !== "");
                         
-                        // Fallback: If incoming player has nowhere to go, force swap them with whoever has played the most
+                        // Fallback: If incoming player isn't eligible anywhere, force swap them anyway
                         if (removableSlots.length === 0) {
                             removableSlots = slotOrder.filter(slot => currentAssignments[slot] !== "");
                         }
@@ -498,9 +514,16 @@ function generate() {
                 }
             }
 
+            // Track Stats and Played Positions
             activePlayers.forEach(name => {
                 if (Object.values(currentAssignments).includes(name)) stats[name].in++;
                 else stats[name].bench++;
+            });
+            
+            Object.entries(currentAssignments).forEach(([slot, player]) => {
+                if (player && playedPositions[player]) {
+                    playedPositions[player].add(SLOTS_TO_ROLES[slot]);
+                }
             });
 
             let fieldHTML = formatConfig.layout.map(item => `
@@ -532,31 +555,32 @@ function generate() {
     
     printHTMLStr += footerHTML;
 
-    // --- CHECK FOR MISSING PREFERENCES WARNING ---
-    let shortPositions = [];
+    // FIX: Cleaner, Generic Position Warnings
+    let shortPositions = new Set();
     if (activePlayers.filter(p => isEligible(rolesMap[p], 'gk')).length === 0) {
-        shortPositions.push("Goalie");
+        shortPositions.add("Goalie");
     }
     slotOrder.forEach(slot => {
         if (activePlayers.filter(p => isEligible(rolesMap[p], slot)).length === 0) {
-            let label = formatConfig.layout.find(l => l.id === slot).label;
-            if (!shortPositions.includes(label)) shortPositions.push(label);
+            shortPositions.add(SLOTS_TO_ROLES[slot]);
         }
     });
 
     let warningHTML = "";
-    if (shortPositions.length > 0) {
+    if (shortPositions.size > 0) {
         warningHTML = `
         <div style="background: #ffebee; border: 1px solid #e57373; padding: 12px; border-radius: 6px; margin: 20px 0 10px 0; color: #c62828; font-size: 0.9rem;">
-            <b>⚠️ Position Warning:</b> Not enough players selected preferences for the following positions: <b>${shortPositions.join(', ')}</b>. The generator filled these spots automatically to ensure a complete lineup.
+            <b>⚠️ Position Warning:</b> Not enough players requested the following positions: <b>${Array.from(shortPositions).join(', ')}</b>. The generator filled these spots automatically to ensure a complete lineup.
         </div>`;
     }
 
-    let tableHTML = `<table class="stats-table"><tr><th>Player Name</th><th>Roles Assigned</th><th>Shifts In</th><th>Shifts Bench</th></tr>`;
+    // FIX: Table now uses actual playedPositions
+    let tableHTML = `<table class="stats-table"><tr><th>Player Name</th><th>Positions Played</th><th>Shifts In</th><th>Shifts Bench</th></tr>`;
     
     processingPlayers.forEach(p => {
         let roles = p.roles;
-        let displayRoles = roles.length === 0 ? 'Any Position' : roles.map(r => ROLE_MAP[r]).join(', ');
+        let actualPlayed = Array.from(playedPositions[p.name] || []);
+        let displayRoles = actualPlayed.length > 0 ? actualPlayed.join(', ') : 'None';
 
         if (roles.includes('A')) {
             if (!p.name.startsWith("Player ")) {
