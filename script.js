@@ -72,7 +72,11 @@ function checkLiveUpdate() {
 function loadUI() {
     let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { teamName: "", format: "7v7", includeSummary: false, players: [] };
     
-    document.getElementById('teamName').value = data.teamName || "";
+    // Attach the onchange event to the Team Name input so it only saves when focus is lost
+    let teamNameInput = document.getElementById('teamName');
+    teamNameInput.value = data.teamName || "";
+    teamNameInput.onchange = saveUI; 
+    
     document.getElementById('fieldFormat').value = data.format || "7v7";
     document.getElementById('includeSummary').checked = data.includeSummary || false;
     
@@ -100,10 +104,25 @@ function saveUI() {
         }
     });
 
+    // Alphabetize the players array in the background before saving
+    players.sort((a, b) => {
+        let nameA = a.name.toLowerCase();
+        let nameB = b.name.toLowerCase();
+        if (nameA < nameB) return -1;
+        if (nameA > nameB) return 1;
+        return 0;
+    });
+
     let data = { teamName, format, includeSummary, players };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     updateButtonStates();
     return data;
+}
+
+// New helper function to save and immediately redraw the sorted UI
+function saveAndSort() {
+    saveUI();
+    loadUI();
 }
 
 function addPlayerRow(name = '', roles = []) {
@@ -111,7 +130,8 @@ function addPlayerRow(name = '', roles = []) {
     let tr = document.createElement('tr');
     if (roles.includes('A')) tr.className = 'absent-row';
     
-    let html = `<td><input type="text" class="p-name" value="${name}" placeholder="Player Name" oninput="saveUI()"></td>`;
+    // Changed oninput to onchange, and pointed to saveAndSort so it snaps alphabetically
+    let html = `<td><input type="text" class="p-name" value="${name}" placeholder="Player Name" onchange="saveAndSort()"></td>`;
     ROLE_KEYS.forEach(key => {
         let isChecked = roles.includes(key) ? 'checked' : '';
         html += `<td><input type="checkbox" value="${key}" ${isChecked} onchange="toggleAbs(this); saveUI()"></td>`;
@@ -157,6 +177,16 @@ function importData() {
     try {
         let decoded = JSON.parse(text);
         if (decoded.format && decoded.players) {
+            
+            // Instantly sort the imported JSON roster
+            decoded.players.sort((a, b) => {
+                let nameA = a.name.toLowerCase();
+                let nameB = b.name.toLowerCase();
+                if (nameA < nameB) return -1;
+                if (nameA > nameB) return 1;
+                return 0;
+            });
+
             localStorage.setItem(STORAGE_KEY, JSON.stringify(decoded));
             loadUI();
             closeModal('importModal');
@@ -201,6 +231,10 @@ function buildPrintHeaderHTML(teamName, format, rightText) {
 
 function generate() {
     const data = saveUI();
+    
+    // Visually snap the roster to alphabetical order and remove empty rows
+    loadUI(); 
+
     const webView = document.getElementById('web-view');
     const printView = document.getElementById('print-view');
     
