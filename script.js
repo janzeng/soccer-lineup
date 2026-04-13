@@ -44,10 +44,29 @@ const FORMATS = {
     }
 };
 
-window.onload = () => { loadUI(); };
+window.onload = () => { 
+    checkURLParams();
+    loadUI(); 
+};
 
 function openModal(id) { document.getElementById(id).style.display = 'flex'; }
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+function checkURLParams() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('data')) {
+        try {
+            let decoded = JSON.parse(decodeURIComponent(atob(params.get('data'))));
+            if (decoded.format && decoded.players) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(decoded));
+                // Clean the URL so the massive string disappears from the address bar
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        } catch (e) {
+            console.error("Failed to parse URL data");
+        }
+    }
+}
 
 function updateButtonStates() {
     let rows = document.querySelectorAll('#playerList tr');
@@ -69,23 +88,60 @@ function checkLiveUpdate() {
     }
 }
 
+function getDefaultPlayerCount(format) {
+    if (format === '9v9') return 9;
+    if (format === '11v11') return 11;
+    return 7;
+}
+
+function generateDemoPlayers(format) {
+    let count = getDefaultPlayerCount(format);
+    let players = [];
+    for (let i = 1; i <= count; i++) {
+        players.push({ name: `Player ${i}`, roles: [] });
+    }
+    return players;
+}
+
 function loadUI() {
-    let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { teamName: "", format: "7v7", includeSummary: false, players: [] };
+    let data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    let formatElem = document.getElementById('fieldFormat');
+    
+    // If no data exists, initialize a demo roster
+    if (!data || !data.players || data.players.length === 0) {
+        let currentFormat = formatElem.value || "7v7";
+        data = { 
+            teamName: "", 
+            format: currentFormat, 
+            includeSummary: false, 
+            players: generateDemoPlayers(currentFormat) 
+        };
+    }
     
     let teamNameInput = document.getElementById('teamName');
     teamNameInput.value = data.teamName || "";
     teamNameInput.onchange = saveUI; 
     
-    document.getElementById('fieldFormat').value = data.format || "7v7";
+    formatElem.value = data.format || "7v7";
     document.getElementById('includeSummary').checked = data.includeSummary || false;
     
     const tbody = document.getElementById('playerList');
     tbody.innerHTML = '';
     
-    let initialPlayers = data.players.length > 0 ? data.players : Array(7).fill({name: '', roles: []});
-    initialPlayers.forEach(p => addPlayerRow(p.name, p.roles));
+    data.players.forEach(p => addPlayerRow(p.name, p.roles));
     
     updateButtonStates();
+}
+
+function handleFormatChange() {
+    saveUI();
+    // If they change format but only have demo players, reset the demo to match the new format
+    let data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    let isOnlyDemo = data.players.every(p => p.name.startsWith('Player ') && p.roles.length === 0);
+    
+    if (isOnlyDemo) {
+        clearRoster(true); // silent clear to refresh demo
+    }
 }
 
 function saveUI() {
@@ -103,12 +159,9 @@ function saveUI() {
         }
     });
 
+    // Natural sort: ensures "Player 10" comes after "Player 9", not "Player 1"
     players.sort((a, b) => {
-        let nameA = a.name.toLowerCase();
-        let nameB = b.name.toLowerCase();
-        if (nameA < nameB) return -1;
-        if (nameA > nameB) return 1;
-        return 0;
+        return a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'});
     });
 
     let data = { teamName, format, includeSummary, players };
@@ -144,8 +197,8 @@ function toggleAbs(checkbox) {
     }
 }
 
-function clearRoster() {
-    if (confirm("Are you sure you want to clear the entire roster?")) {
+function clearRoster(silent = false) {
+    if (silent || confirm("Are you sure you want to clear the entire roster?")) {
         localStorage.removeItem(STORAGE_KEY);
         document.getElementById('teamName').value = "";
         document.getElementById('web-view').innerHTML = "";
@@ -155,15 +208,28 @@ function clearRoster() {
     }
 }
 
-function exportData() {
+function copyShareLink() {
     let data = saveUI();
     if (data.players.length === 0) return;
     
-    let plainTextJson = JSON.stringify(data, null, 2);
-    navigator.clipboard.writeText(plainTextJson).then(() => {
-        alert("Roster JSON copied to clipboard! You can also save this text in a note or email.");
-    }).catch(err => {
-        prompt("Copy this roster text manually:", plainTextJson);
+    let jsonStr = JSON.stringify(data);
+    let base64 = btoa(encodeURIComponent(jsonStr)); 
+    let shareLink = window.location.origin + window.location.pathname + "?data=" + base64;
+    
+    navigator.clipboard.writeText(shareLink).then(() => {
+        alert("Shareable Link copied to clipboard!");
+        closeModal('exportModal');
+    });
+}
+
+function copyRosterJSON() {
+    let data = saveUI();
+    if (data.players.length === 0) return;
+    
+    let jsonStr = JSON.stringify(data, null, 2);
+    navigator.clipboard.writeText(jsonStr).then(() => {
+        alert("Roster JSON copied to clipboard!");
+        closeModal('exportModal');
     });
 }
 
@@ -175,11 +241,7 @@ function importData() {
         if (decoded.format && decoded.players) {
             
             decoded.players.sort((a, b) => {
-                let nameA = a.name.toLowerCase();
-                let nameB = b.name.toLowerCase();
-                if (nameA < nameB) return -1;
-                if (nameA > nameB) return 1;
-                return 0;
+                return a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'});
             });
 
             localStorage.setItem(STORAGE_KEY, JSON.stringify(decoded));
@@ -199,7 +261,10 @@ function printLineups() {
 }
 
 function isEligible(roles, slot) {
-    if (!roles || roles.length === 0 || roles.includes('A')) return false;
+    if (!roles || roles.includes('A')) return false;
+    // If a player has NO checkboxes selected, they are eligible for EVERYTHING
+    if (roles.length === 0) return true; 
+    
     if (slot === 'gk') return roles.includes('G');
     if (['s'].includes(slot)) return roles.includes('S') || roles.includes('F'); 
     if (['lf', 'rf'].includes(slot)) return roles.includes('F') || roles.includes('S');
@@ -211,7 +276,10 @@ function isEligible(roles, slot) {
 function formatNamePrint(name, roles, showAbbr = false) {
     if (!name) return "";
     if (!showAbbr) return name; 
-    if (roles.length === 0) return name;
+    
+    // Unassigned now shows as "Any"
+    if (roles.length === 0) return `${name} <span class="p-name-abbr">[Any]</span>`;
+    
     let abbrStr = roles.includes('A') ? 'Abs' : roles.map(r => ROLE_MAP[r]).join(', ');
     return `${name} <span class="p-name-abbr">[${abbrStr}]</span>`;
 }
@@ -252,9 +320,11 @@ function generate() {
     let rolesMap = {};
     data.players.forEach(p => rolesMap[p.name] = p.roles);
 
-    const activePlayers = data.players.filter(p => p.roles.length > 0 && !p.roles.includes('A')).map(p => p.name);
+    const activePlayers = data.players.filter(p => p.roles.length > 0 && !p.roles.includes('A') || p.roles.length === 0);
     const absentPlayers = data.players.filter(p => p.roles.includes('A')).map(p => p.name);
-    const goalies = activePlayers.filter(name => rolesMap[name].includes('G'));
+    
+    // Goalies logic updated to include "Any Position" players
+    const goalies = activePlayers.filter(name => rolesMap[name].includes('G') || rolesMap[name].length === 0);
     
     let stats = {};
     activePlayers.forEach(name => stats[name] = { in: 0, bench: 0 });
@@ -271,7 +341,6 @@ function generate() {
     let printHTMLStr = "";
 
     for (let q = 1; q <= 4; q++) {
-        // Headers 
         if (q === 1) {
             printHTMLStr += buildPrintHeaderHTML(tName, data.format, '1st Half');
             webHTMLStr += buildWebHeaderHTML(tName, data.format, '1st Half', true);
@@ -284,7 +353,6 @@ function generate() {
             webHTMLStr += buildWebHeaderHTML(tName, data.format, '2nd Half', false);
         }
 
-        // Initialize the flexbox Row wrapper
         let webRowHTML = `<div class="card-row">`;
         let printRowHTML = `<div class="card-row">`;
 
@@ -363,7 +431,7 @@ function generate() {
                         onFieldBefore.push(incomingPlayer); 
                     }
                 });
-                if (subsDisplay.length === 0) subsDisplay = ["No Substitutions"];
+                if (subsDisplay.length === 0) subsDisplay = ["No Subs"];
             }
 
             activePlayers.forEach(name => {
@@ -391,7 +459,6 @@ function generate() {
             printRowHTML += cardHTML;
         }
         
-        // Close the Row wrapper
         webRowHTML += `</div>`;
         printRowHTML += `</div>`;
         
@@ -404,11 +471,9 @@ function generate() {
     let tableHTML = `<table class="stats-table"><tr><th>Player Name</th><th>Roles Assigned</th><th>Shifts In</th><th>Shifts Bench</th></tr>`;
     data.players.forEach(p => {
         let roles = p.roles;
-        let displayRoles = roles.length === 0 ? 'Unassigned' : roles.map(r => ROLE_MAP[r]).join(', ');
+        let displayRoles = roles.length === 0 ? 'Any Position' : roles.map(r => ROLE_MAP[r]).join(', ');
 
-        if (roles.length === 0) {
-            tableHTML += `<tr class="absent-text"><td><b>${p.name}</b></td><td>Unassigned</td><td>0</td><td>0</td></tr>`;
-        } else if (roles.includes('A')) {
+        if (roles.includes('A')) {
             tableHTML += `<tr class="absent-text"><td><del>${p.name}</del></td><td>Absent</td><td>0</td><td>0</td></tr>`;
         } else {
             tableHTML += `<tr><td><b>${p.name}</b></td><td>${displayRoles}</td><td>${stats[p.name].in}</td><td>${stats[p.name].bench}</td></tr>`;
