@@ -1,5 +1,5 @@
-const ROLE_KEYS = ['C', 'G', 'S', 'F', 'M', 'D', 'A'];
-const ROLE_MAP = { 'C': 'Cap', 'G': 'Goal', 'S': 'S', 'F': 'F', 'M': 'M', 'D': 'D', 'A': 'Abs' };
+const ROLE_KEYS = ['C', 'S', 'F', 'M', 'D', 'G', 'A'];
+const ROLE_MAP = { 'C': 'Cap', 'S': 'S', 'F': 'F', 'M': 'M', 'D': 'D', 'G': 'Goal', 'A': 'Abs' };
 const STORAGE_KEY = 'v1_SmartSub_Data';
 
 const FORMATS = {
@@ -44,23 +44,67 @@ const FORMATS = {
     }
 };
 
-window.onload = () => { loadUI(); };
+const SLOTS_TO_ROLES = {
+    'gk': 'Goalie', 's': 'Striker', 'lf': 'Forward', 'rf': 'Forward',
+    'm': 'Midfield', 'lm': 'Midfield', 'cm': 'Midfield', 'rm': 'Midfield', 'lcm': 'Midfield', 'rcm': 'Midfield',
+    'ld': 'Defense', 'cd': 'Defense', 'rd': 'Defense', 'lb': 'Defense', 'lcb': 'Defense', 'rcb': 'Defense', 'rb': 'Defense'
+};
+
+const SORT_ORDER = { 'Striker': 1, 'Forward': 2, 'Midfield': 3, 'Defense': 4, 'Goalie': 5 };
+
+window.onload = () => { 
+    checkURLParams();
+    loadUI(); 
+};
 
 function openModal(id) { document.getElementById(id).style.display = 'flex'; }
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
+function checkURLParams() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('data')) {
+        try {
+            let decoded = JSON.parse(decodeURIComponent(atob(params.get('data'))));
+            if (decoded.format && decoded.players) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(decoded));
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        } catch (e) {
+            console.error("Failed to parse URL data");
+        }
+    }
+}
+
 function updateButtonStates() {
     let rows = document.querySelectorAll('#playerList tr');
-    let hasPlayers = false;
+    let hasRealPlayers = false;
+    let emptyRowCount = 0;
+    
     rows.forEach(row => {
-        if (row.querySelector('.p-name').value.trim() !== "") hasPlayers = true;
+        if (row.querySelector('.p-name').value.trim() !== "") {
+            hasRealPlayers = true;
+        } else {
+            emptyRowCount++;
+        }
     });
     
-    document.getElementById('exportBtn').disabled = !hasPlayers;
-    document.getElementById('clearBtn').disabled = !hasPlayers;
+    document.getElementById('exportBtn').disabled = !hasRealPlayers;
+    document.getElementById('clearBtn').disabled = !hasRealPlayers;
     
     let webViewContent = document.getElementById('web-view').innerHTML.trim();
     document.getElementById('printBtn').disabled = (webViewContent === "");
+
+    let addBtn = document.querySelector('.add-player-btn');
+    if (addBtn) {
+        addBtn.style.display = (emptyRowCount > 0) ? 'none' : 'block';
+    }
+
+    let captainCheckboxes = document.querySelectorAll('#playerList input[type="checkbox"][value="C"]');
+    let isCaptainSelected = Array.from(captainCheckboxes).some(cb => cb.checked);
+    
+    captainCheckboxes.forEach(cb => {
+        cb.disabled = isCaptainSelected && !cb.checked;
+    });
 }
 
 function checkLiveUpdate() {
@@ -69,23 +113,54 @@ function checkLiveUpdate() {
     }
 }
 
+function getDefaultPlayerCount(format) {
+    if (format === '9v9') return 9;
+    if (format === '11v11') return 11;
+    return 7;
+}
+
 function loadUI() {
-    let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { teamName: "", format: "7v7", includeSummary: false, players: [] };
+    let data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    let formatElem = document.getElementById('fieldFormat');
+    let currentFormat = formatElem ? formatElem.value : "7v7";
+    
+    if (!data || !data.players) {
+        data = { teamName: "", format: currentFormat, includeSummary: false, players: [] };
+    }
     
     let teamNameInput = document.getElementById('teamName');
     teamNameInput.value = data.teamName || "";
     teamNameInput.onchange = saveUI; 
     
-    document.getElementById('fieldFormat').value = data.format || "7v7";
-    document.getElementById('includeSummary').checked = data.includeSummary || false;
+    if (formatElem) formatElem.value = data.format || "7v7";
+    let summaryElem = document.getElementById('includeSummary');
+    if (summaryElem) summaryElem.checked = data.includeSummary || false;
+    
+    let formatMin = getDefaultPlayerCount(data.format || currentFormat);
+    
+    let realPlayers = data.players.filter(p => p.name.trim() !== "");
+    let emptyPlayers = data.players.filter(p => p.name.trim() === "");
+    
+    let neededEmpty = Math.max(0, formatMin - realPlayers.length);
+    let allowedEmpty = Math.max(neededEmpty, Math.min(emptyPlayers.length, 1));
+    
+    emptyPlayers = [];
+    for(let i = 0; i < allowedEmpty; i++) {
+        emptyPlayers.push({name: "", roles: []});
+    }
+    
+    data.players = [...realPlayers, ...emptyPlayers];
     
     const tbody = document.getElementById('playerList');
     tbody.innerHTML = '';
     
-    let initialPlayers = data.players.length > 0 ? data.players : Array(7).fill({name: '', roles: []});
-    initialPlayers.forEach(p => addPlayerRow(p.name, p.roles));
+    data.players.forEach(p => addPlayerRow(p.name, p.roles));
     
     updateButtonStates();
+}
+
+function handleFormatChange() {
+    saveAndSort(); 
 }
 
 function saveUI() {
@@ -97,18 +172,16 @@ function saveUI() {
 
     rows.forEach(row => {
         let name = row.querySelector('.p-name').value.trim();
-        if (name !== "") {
-            let roles = Array.from(row.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
-            players.push({ name, roles });
-        }
+        let roles = Array.from(row.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+        players.push({ name, roles });
     });
 
     players.sort((a, b) => {
-        let nameA = a.name.toLowerCase();
-        let nameB = b.name.toLowerCase();
-        if (nameA < nameB) return -1;
-        if (nameA > nameB) return 1;
-        return 0;
+        let aEmpty = (a.name === "");
+        let bEmpty = (b.name === "");
+        if (aEmpty && !bEmpty) return 1;
+        if (!aEmpty && bEmpty) return -1;
+        return a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'});
     });
 
     let data = { teamName, format, includeSummary, players };
@@ -134,6 +207,7 @@ function addPlayerRow(name = '', roles = []) {
     });
     tr.innerHTML = html;
     tbody.appendChild(tr);
+    
     updateButtonStates();
 }
 
@@ -144,8 +218,8 @@ function toggleAbs(checkbox) {
     }
 }
 
-function clearRoster() {
-    if (confirm("Are you sure you want to clear the entire roster?")) {
+function clearRoster(silent = false) {
+    if (silent || confirm("Are you sure you want to clear the entire roster?")) {
         localStorage.removeItem(STORAGE_KEY);
         document.getElementById('teamName').value = "";
         document.getElementById('web-view').innerHTML = "";
@@ -155,15 +229,32 @@ function clearRoster() {
     }
 }
 
-function exportData() {
+function copyShareLink() {
     let data = saveUI();
-    if (data.players.length === 0) return;
+    let realPlayers = data.players.filter(p => p.name.trim() !== "");
+    if (realPlayers.length === 0) return;
     
-    let plainTextJson = JSON.stringify(data, null, 2);
-    navigator.clipboard.writeText(plainTextJson).then(() => {
-        alert("Roster JSON copied to clipboard! You can also save this text in a note or email.");
-    }).catch(err => {
-        prompt("Copy this roster text manually:", plainTextJson);
+    let exportData = { ...data, players: realPlayers };
+    let jsonStr = JSON.stringify(exportData);
+    let base64 = btoa(encodeURIComponent(jsonStr)); 
+    let shareLink = window.location.origin + window.location.pathname + "?data=" + base64;
+    
+    navigator.clipboard.writeText(shareLink).then(() => {
+        alert("Shareable Link copied to clipboard!");
+        closeModal('exportModal');
+    });
+}
+
+function copyRosterJSON() {
+    let data = saveUI();
+    let realPlayers = data.players.filter(p => p.name.trim() !== "");
+    if (realPlayers.length === 0) return;
+    
+    let exportData = { ...data, players: realPlayers };
+    let jsonStr = JSON.stringify(exportData, null, 2);
+    navigator.clipboard.writeText(jsonStr).then(() => {
+        alert("Roster JSON copied to clipboard!");
+        closeModal('exportModal');
     });
 }
 
@@ -175,11 +266,7 @@ function importData() {
         if (decoded.format && decoded.players) {
             
             decoded.players.sort((a, b) => {
-                let nameA = a.name.toLowerCase();
-                let nameB = b.name.toLowerCase();
-                if (nameA < nameB) return -1;
-                if (nameA > nameB) return 1;
-                return 0;
+                return a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'});
             });
 
             localStorage.setItem(STORAGE_KEY, JSON.stringify(decoded));
@@ -199,7 +286,9 @@ function printLineups() {
 }
 
 function isEligible(roles, slot) {
-    if (!roles || roles.length === 0 || roles.includes('A')) return false;
+    if (!roles || roles.includes('A')) return false;
+    if (roles.length === 0) return true; 
+    
     if (slot === 'gk') return roles.includes('G');
     if (['s'].includes(slot)) return roles.includes('S') || roles.includes('F'); 
     if (['lf', 'rf'].includes(slot)) return roles.includes('F') || roles.includes('S');
@@ -211,7 +300,9 @@ function isEligible(roles, slot) {
 function formatNamePrint(name, roles, showAbbr = false) {
     if (!name) return "";
     if (!showAbbr) return name; 
-    if (roles.length === 0) return name;
+    
+    if (roles.length === 0) return `${name} <span class="p-name-abbr">[Any]</span>`;
+    
     let abbrStr = roles.includes('A') ? 'Abs' : roles.map(r => ROLE_MAP[r]).join(', ');
     return `${name} <span class="p-name-abbr">[${abbrStr}]</span>`;
 }
@@ -248,16 +339,55 @@ function generate() {
     let tName = data.teamName || "Unnamed Team";
     const formatConfig = FORMATS[data.format];
     const slotOrder = formatConfig.slots;
+    const formatMin = getDefaultPlayerCount(data.format);
+
+    let realPlayersList = data.players.filter(p => p.name.trim() !== "");
+    let emptyPlayersList = data.players.filter(p => p.name.trim() === "");
+    
+    let processingPlayers = [];
+    realPlayersList.forEach(p => processingPlayers.push({ name: p.name.trim(), roles: p.roles }));
+
+    let neededToFill = Math.max(0, formatMin - realPlayersList.length);
+    let generatedPlayerIndex = realPlayersList.length + 1;
+
+    for (let i = 0; i < neededToFill; i++) {
+        let rolesToUse = (i < emptyPlayersList.length) ? emptyPlayersList[i].roles : [];
+        processingPlayers.push({ name: `Player ${generatedPlayerIndex++}`, roles: rolesToUse });
+    }
 
     let rolesMap = {};
-    data.players.forEach(p => rolesMap[p.name] = p.roles);
+    processingPlayers.forEach(p => rolesMap[p.name] = p.roles);
 
-    const activePlayers = data.players.filter(p => p.roles.length > 0 && !p.roles.includes('A')).map(p => p.name);
-    const absentPlayers = data.players.filter(p => p.roles.includes('A')).map(p => p.name);
-    const goalies = activePlayers.filter(name => rolesMap[name].includes('G'));
+    const activePlayers = processingPlayers.filter(p => !p.roles.includes('A')).map(p => p.name);
+    const absentPlayers = processingPlayers.filter(p => p.roles.includes('A') && !p.name.startsWith("Player ")).map(p => p.name);
+    
+    let goalies = activePlayers.filter(name => rolesMap[name].includes('G') || rolesMap[name].length === 0);
+    
+    if (goalies.length === 0 && activePlayers.length > 0) {
+        goalies = [...activePlayers];
+    }
     
     let stats = {};
-    activePlayers.forEach(name => stats[name] = { in: 0, bench: 0 });
+    let playedPositions = {}; 
+    let remainingGoalieShifts = {};
+    
+    activePlayers.forEach(name => {
+        stats[name] = { in: 0, bench: 0 };
+        playedPositions[name] = new Set();
+        remainingGoalieShifts[name] = 0;
+    });
+
+    // Look-ahead to identify mandatory goalie shifts 
+    for (let q = 1; q <= 4; q++) {
+        for (let r = 1; r <= 2; r++) {
+            let scheduledGK = "";
+            if (goalies.length === 1) scheduledGK = goalies[0];
+            else if (goalies.length === 2) scheduledGK = (q <= 2) ? goalies[0] : goalies[1];
+            else scheduledGK = goalies[(q - 1) % goalies.length];
+            
+            if (scheduledGK) remainingGoalieShifts[scheduledGK]++;
+        }
+    }
 
     let footerHTML = `<div class="roster-footer"><div><b>ROSTER:</b> ${activePlayers.map(p => formatNamePrint(p, rolesMap[p], true)).join(', ')}</div>`;
     if (absentPlayers.length > 0) footerHTML += `<div style="color: #666; margin-top: 5px;"><b>ABSENT:</b> ${absentPlayers.join(', ')}</div>`;
@@ -270,8 +400,9 @@ function generate() {
     let webHTMLStr = "";
     let printHTMLStr = "";
 
+    let isNoSubsGame = (activePlayers.length <= formatMin);
+
     for (let q = 1; q <= 4; q++) {
-        // Headers 
         if (q === 1) {
             printHTMLStr += buildPrintHeaderHTML(tName, data.format, '1st Half');
             webHTMLStr += buildWebHeaderHTML(tName, data.format, '1st Half', true);
@@ -284,91 +415,184 @@ function generate() {
             webHTMLStr += buildWebHeaderHTML(tName, data.format, '2nd Half', false);
         }
 
-        // Initialize the flexbox Row wrapper
         let webRowHTML = `<div class="card-row">`;
         let printRowHTML = `<div class="card-row">`;
 
         for (let r = 1; r <= 2; r++) {
             const isReset = (q === 1 && r === 1) || (q === 3 && r === 1);
             let subsDisplay = [];
-            let vacatedByBreak = null;
-            
-            let activeGK = "";
-            let restingGK = "";
-            if (goalies.length === 1) activeGK = goalies[0];
-            else if (goalies.length === 2) {
-                activeGK = (q <= 2) ? goalies[0] : goalies[1];
-                restingGK = (q <= 2) ? goalies[1] : goalies[0];
-            } else if (goalies.length > 2) {
-                activeGK = goalies[(q - 1) % goalies.length];
-            }
-            
-            currentAssignments['gk'] = activeGK;
-            let fieldPool = activePlayers.filter(n => n !== activeGK);
 
-            if (goalies.length === 2 && q === 2 && r === 2 && restingGK) {
-                fieldPool = fieldPool.filter(n => n !== restingGK);
-                let slotToVacate = slotOrder.find(s => currentAssignments[s] === restingGK);
-                if (slotToVacate) {
-                    currentAssignments[slotToVacate] = "";
-                    vacatedByBreak = restingGK; 
-                }
-            }
-
-            if (isReset) {
-                let unassigned = [...fieldPool];
-                slotOrder.forEach(slot => {
-                    let eligible = unassigned.filter(name => isEligible(rolesMap[name], slot));
-                    eligible.sort((a, b) => stats[a].in - stats[b].in); 
-                    if (eligible.length > 0) {
-                        currentAssignments[slot] = eligible[0];
-                        unassigned = unassigned.filter(n => n !== eligible[0]);
-                    } else { currentAssignments[slot] = ""; }
-                });
-                let benchedThisShift = unassigned;
-                subsDisplay = benchedThisShift.length > 0 ? ["<b>Bench:</b> " + benchedThisShift.join(', ')] : ["No Subs"];
+            if (isNoSubsGame && !isReset) {
+                subsDisplay = ["No Subs"];
             } else {
+                let vacatedByBreak = null;
+                let activeGK = "";
+                let restingGK = "";
+                
+                if (goalies.length === 1) activeGK = goalies[0];
+                else if (goalies.length === 2) {
+                    activeGK = (q <= 2) ? goalies[0] : goalies[1];
+                    restingGK = (q <= 2) ? goalies[1] : goalies[0];
+                } else if (goalies.length > 2) {
+                    activeGK = goalies[(q - 1) % goalies.length];
+                }
+                
+                currentAssignments['gk'] = activeGK;
+                
                 slotOrder.forEach(slot => {
-                    if (currentAssignments[slot] === "") {
-                        let eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n) && isEligible(rolesMap[n], slot));
-                        eligibleBench.sort((a, b) => stats[a].in - stats[b].in);
-                        if (eligibleBench.length > 0) {
-                            currentAssignments[slot] = eligibleBench[0];
-                            let outgoingText = vacatedByBreak ? vacatedByBreak : "Empty";
-                            subsDisplay.push(`<b>${eligibleBench[0]}</b> <span class="arrow">→</span> ${outgoingText}`);
-                            vacatedByBreak = null; 
-                        }
+                    if (currentAssignments[slot] === activeGK) {
+                        currentAssignments[slot] = "";
                     }
                 });
 
-                let onFieldBefore = slotOrder.map(s => currentAssignments[s]).filter(n => n !== "");
-                let benchBefore = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
-                
-                benchBefore.sort((a, b) => stats[a].in - stats[b].in); 
-                
-                benchBefore.forEach(incomingPlayer => {
-                    let removableSlots = slotOrder.filter(slot => isEligible(rolesMap[incomingPlayer], slot) && currentAssignments[slot] !== "");
-                    let removablePlayers = removableSlots.map(slot => currentAssignments[slot]);
+                let fieldPool = activePlayers.filter(n => n !== activeGK);
+                let canAffordBreak = (fieldPool.length - 1 >= slotOrder.length);
+
+                if (goalies.length === 2 && q === 2 && r === 2 && restingGK && canAffordBreak) {
+                    fieldPool = fieldPool.filter(n => n !== restingGK);
+                    let slotToVacate = slotOrder.find(s => currentAssignments[s] === restingGK);
+                    if (slotToVacate) {
+                        currentAssignments[slotToVacate] = "";
+                        vacatedByBreak = restingGK; 
+                    }
+                }
+
+                if (isReset) {
+                    let sortedPool = [...fieldPool].sort((a, b) => {
+                        // Lowest In counts go to field first
+                        if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
+                        // THE TIE BREAKER: Lowest remaining Goalie shifts go to field (forces future goalies to bench)
+                        if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[a] - remainingGoalieShifts[b];
+                        // Highest Bench counts go to field first
+                        if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
+                        // Protect resting goalie from early benching
+                        if (a === restingGK && q <= 2) return -1;
+                        if (b === restingGK && q <= 2) return 1;
+                        return 0;
+                    });
                     
-                    removablePlayers.sort((a, b) => stats[b].in - stats[a].in); 
+                    let playersToField = sortedPool.slice(0, slotOrder.length);
+                    let playersToBench = sortedPool.slice(slotOrder.length);
                     
-                    if (removablePlayers.length > 0) {
-                        let outgoingPlayer = removablePlayers[0];
-                        let slotToSwap = slotOrder.find(s => currentAssignments[s] === outgoingPlayer);
+                    let unassignedPlayers = [...playersToField];
+                    
+                    slotOrder.forEach(slot => {
+                        let eligibleIndex = unassignedPlayers.findIndex(name => isEligible(rolesMap[name], slot));
+                        if (eligibleIndex !== -1) {
+                            currentAssignments[slot] = unassignedPlayers[eligibleIndex];
+                            unassignedPlayers.splice(eligibleIndex, 1);
+                        } else {
+                            currentAssignments[slot] = ""; 
+                        }
+                    });
+                    
+                    slotOrder.forEach(slot => {
+                        if (currentAssignments[slot] === "") {
+                            if (unassignedPlayers.length > 0) {
+                                currentAssignments[slot] = unassignedPlayers[0];
+                                unassignedPlayers.shift();
+                            }
+                        }
+                    });
+                    
+                    subsDisplay = playersToBench.length > 0 ? ["<b>Bench:</b> " + playersToBench.join(', ')] : ["No Subs"];
+                
+                } else {
+                    slotOrder.forEach(slot => {
+                        if (currentAssignments[slot] === "") {
+                            let eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
+                            
+                            eligibleBench.sort((a, b) => {
+                                if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
+                                if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[a] - remainingGoalieShifts[b];
+                                if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
+                                return 0;
+                            });
+                            
+                            let prefBench = eligibleBench.filter(n => isEligible(rolesMap[n], slot));
+                            let playerToInsert = prefBench.length > 0 ? prefBench[0] : eligibleBench[0];
+
+                            if (playerToInsert) {
+                                currentAssignments[slot] = playerToInsert;
+                                let outgoingText = vacatedByBreak ? vacatedByBreak : "Empty";
+                                subsDisplay.push(`<b>${playerToInsert}</b> <span class="arrow">→</span> ${outgoingText}`);
+                                vacatedByBreak = null; 
+                            }
+                        }
+                    });
+
+                    let benchBefore = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
+                    
+                    benchBefore.sort((a, b) => {
+                        if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
+                        if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[a] - remainingGoalieShifts[b];
+                        if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
+                        return 0;
+                    });
+                    
+                    let numToSub = Math.min(benchBefore.length, slotOrder.length);
+                    let playersToBringIn = benchBefore.slice(0, numToSub);
+                    
+                    playersToBringIn.forEach(incomingPlayer => {
+                        let currentField = slotOrder.map(s => currentAssignments[s]).filter(n => n !== "");
                         
+                        let sortedField = [...currentField].sort((a, b) => {
+                            // Highest In counts sub out first
+                            if (stats[a].in !== stats[b].in) return stats[b].in - stats[a].in; 
+                            // TIE BREAKER: Higher remaining Goalie shifts sub out first
+                            if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[b] - remainingGoalieShifts[a];
+                            // Lowest Bench counts sub out first
+                            if (stats[a].bench !== stats[b].bench) return stats[a].bench - stats[b].bench; 
+                            // Protect resting goalie from early subbing
+                            if (a === restingGK && q <= 2) return 1; 
+                            if (b === restingGK && q <= 2) return -1;
+                            return 0;
+                        });
+                        
+                        let topCandidate = sortedField[0];
+                        let candidatesToSit = sortedField.filter(n => 
+                            stats[n].in === stats[topCandidate].in && 
+                            remainingGoalieShifts[n] === remainingGoalieShifts[topCandidate] &&
+                            stats[n].bench === stats[topCandidate].bench
+                        );
+                        
+                        if (candidatesToSit.length > 1 && q <= 2 && candidatesToSit.includes(restingGK)) {
+                            candidatesToSit = candidatesToSit.filter(n => n !== restingGK);
+                        }
+                        
+                        let eligibleSlots = slotOrder.filter(slot => {
+                            let occupant = currentAssignments[slot];
+                            return occupant && candidatesToSit.includes(occupant) && isEligible(rolesMap[incomingPlayer], slot);
+                        });
+                        
+                        let slotToSwap;
+                        if (eligibleSlots.length > 0) {
+                            slotToSwap = eligibleSlots[0];
+                        } else {
+                            slotToSwap = slotOrder.find(slot => currentAssignments[slot] === candidatesToSit[0]);
+                        }
+                        
+                        let outgoingPlayer = currentAssignments[slotToSwap];
                         currentAssignments[slotToSwap] = incomingPlayer;
                         subsDisplay.push(`<b>${incomingPlayer}</b> <span class="arrow">→</span> ${outgoingPlayer}`);
-                        
-                        onFieldBefore = onFieldBefore.filter(n => n !== outgoingPlayer);
-                        onFieldBefore.push(incomingPlayer); 
-                    }
-                });
-                if (subsDisplay.length === 0) subsDisplay = ["No Substitutions"];
+                    });
+                    
+                    if (subsDisplay.length === 0) subsDisplay = ["No Subs"];
+                }
             }
 
             activePlayers.forEach(name => {
                 if (Object.values(currentAssignments).includes(name)) stats[name].in++;
                 else stats[name].bench++;
+            });
+            
+            // Deduct the shift from the goalie's mandatory queue
+            if (currentAssignments['gk']) remainingGoalieShifts[currentAssignments['gk']]--;
+
+            Object.entries(currentAssignments).forEach(([slot, player]) => {
+                if (player && playedPositions[player]) {
+                    playedPositions[player].add(SLOTS_TO_ROLES[slot]);
+                }
             });
 
             let fieldHTML = formatConfig.layout.map(item => `
@@ -391,7 +615,6 @@ function generate() {
             printRowHTML += cardHTML;
         }
         
-        // Close the Row wrapper
         webRowHTML += `</div>`;
         printRowHTML += `</div>`;
         
@@ -401,28 +624,66 @@ function generate() {
     
     printHTMLStr += footerHTML;
 
-    let tableHTML = `<table class="stats-table"><tr><th>Player Name</th><th>Roles Assigned</th><th>Shifts In</th><th>Shifts Bench</th></tr>`;
-    data.players.forEach(p => {
-        let roles = p.roles;
-        let displayRoles = roles.length === 0 ? 'Unassigned' : roles.map(r => ROLE_MAP[r]).join(', ');
+    let requiredRoleNames = new Set(['Goalie']); 
+    formatConfig.slots.forEach(slot => {
+        requiredRoleNames.add(SLOTS_TO_ROLES[slot]);
+    });
 
-        if (roles.length === 0) {
-            tableHTML += `<tr class="absent-text"><td><b>${p.name}</b></td><td>Unassigned</td><td>0</td><td>0</td></tr>`;
-        } else if (roles.includes('A')) {
-            tableHTML += `<tr class="absent-text"><td><del>${p.name}</del></td><td>Absent</td><td>0</td><td>0</td></tr>`;
+    let shortPositions = [];
+    const standardOrder = ['Striker', 'Forward', 'Midfield', 'Defense', 'Goalie'];
+
+    standardOrder.forEach(roleName => {
+        if (requiredRoleNames.has(roleName)) {
+            let hasPreference = activePlayers.some(p => {
+                let r = rolesMap[p];
+                if (roleName === 'Goalie') return r.includes('G');
+                if (roleName === 'Striker') return r.includes('S');
+                if (roleName === 'Forward') return r.includes('F');
+                if (roleName === 'Midfield') return r.includes('M');
+                if (roleName === 'Defense') return r.includes('D');
+                return false;
+            });
+            if (!hasPreference) {
+                shortPositions.push(roleName);
+            }
+        }
+    });
+
+    let warningHTML = "";
+    if (shortPositions.length > 0) {
+        warningHTML = `
+        <div style="background: #ffebee; border: 1px solid #e57373; padding: 12px; border-radius: 6px; margin: 20px 0 10px 0; color: #c62828; font-size: 0.9rem;">
+            <b>⚠️ Position Warning:</b> Not enough players requested the following positions: <b>${shortPositions.join(', ')}</b>. The generator filled these spots automatically to ensure a complete lineup.
+        </div>`;
+    }
+
+    let tableHTML = `<table class="stats-table"><tr><th>Player Name</th><th>Positions Played</th><th>Shifts In</th><th>Shifts Bench</th></tr>`;
+    
+    processingPlayers.forEach(p => {
+        let roles = p.roles;
+        let actualPlayed = Array.from(playedPositions[p.name] || []);
+        
+        actualPlayed.sort((a, b) => (SORT_ORDER[a] || 99) - (SORT_ORDER[b] || 99));
+        
+        let displayRoles = actualPlayed.length > 0 ? actualPlayed.join(', ') : 'None';
+
+        if (roles.includes('A')) {
+            if (!p.name.startsWith("Player ")) {
+                tableHTML += `<tr class="absent-text"><td><del>${p.name}</del></td><td>Absent</td><td>0</td><td>0</td></tr>`;
+            }
         } else {
             tableHTML += `<tr><td><b>${p.name}</b></td><td>${displayRoles}</td><td>${stats[p.name].in}</td><td>${stats[p.name].bench}</td></tr>`;
         }
     });
     tableHTML += `</table>`;
     
-    document.getElementById('statsContainer').innerHTML = tableHTML;
+    document.getElementById('statsContainer').innerHTML = warningHTML + tableHTML;
     webView.innerHTML = webHTMLStr;
 
     if (data.includeSummary) {
         printHTMLStr += `<div class="page-break"></div>`;
         printHTMLStr += buildPrintHeaderHTML(tName, data.format, ''); 
-        printHTMLStr += `<div class="summary-page-wrapper">${tableHTML}</div>`;
+        printHTMLStr += `<div class="summary-page-wrapper">${warningHTML}${tableHTML}</div>`;
     }
     printView.innerHTML = printHTMLStr;
     

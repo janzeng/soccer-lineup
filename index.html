@@ -11,11 +11,11 @@
 
 <div class="no-print">
     <div class="app-header">
-        <h1>Lineup Generator</h1>
+        <h1>⚽ Lineup Generator</h1>
         <div class="utility-btns">
             <button class="util-btn info-btn" onclick="openModal('infoModal')">How it Works (Info)</button>
             <button class="util-btn" onclick="openModal('importModal')">Import Roster</button>
-            <button id="exportBtn" class="util-btn" onclick="exportData()" disabled>Export Roster</button>
+            <button id="exportBtn" class="util-btn" onclick="openModal('exportModal')" disabled>Export Roster</button>
         </div>
     </div>
     
@@ -26,7 +26,7 @@
         </div>
         <div class="input-group">
             <label>Field Format</label>
-            <select id="fieldFormat" onchange="saveUI()">
+            <select id="fieldFormat" onchange="handleFormatChange()">
                 <option value="7v7">7v7</option>
                 <option value="9v9">9v9</option>
                 <option value="11v11">11v11</option>
@@ -42,11 +42,11 @@
             <tr>
                 <th>Player Name</th>
                 <th title="Captain">C</th>
-                <th title="Goalie">G</th>
                 <th title="Striker">S</th>
                 <th title="Forward">F</th>
                 <th title="Midfield">M</th>
                 <th title="Defense">D</th>
+                <th title="Goalie">G</th>
                 <th title="Absent">Abs</th>
             </tr>
         </thead>
@@ -71,6 +71,16 @@
 
 <div id="print-view"></div>
 
+<div class="modal-overlay" id="exportModal">
+    <div class="modal">
+        <h3>Export Roster</h3>
+        <p style="font-size: 0.9rem; color: #555;">Choose how you want to share or save your roster.</p>
+        <button class="action-btn" style="width: 100%; margin-bottom: 10px;" onclick="copyShareLink()">Copy Shareable Link</button>
+        <button class="action-btn" style="width: 100%; margin-bottom: 15px; background: #555;" onclick="copyRosterJSON()">Copy Roster JSON</button>
+        <button class="modal-close" onclick="closeModal('exportModal')">Cancel</button>
+    </div>
+</div>
+
 <div class="modal-overlay" id="importModal">
     <div class="modal">
         <h3>Import Roster Data</h3>
@@ -86,7 +96,7 @@
         <h3>Coach's Guide</h3>
         <ul style="font-size: 0.9rem; color: #333; line-height: 1.5; padding-left: 20px;">
             <li><b>The Fair-Play Algorithm:</b> The generator tracks every shift. When subbing, it prioritizes putting in players who have sat on the bench the longest, and pulling out players who have played the most consecutive shifts.</li>
-            <li><b>Position Locks:</b> A player will <b>only</b> be substituted into positions you have checked for them. Ensure you check enough boxes across your roster to fill the field!</li>
+            <li><b>Position Locks:</b> A player will only be substituted into checked positions. Leave a player completely blank to make them eligible for <b>Any Position</b>.</li>
             <li><b>Goalie Logic:</b> 
                 <ul>
                     <li><i>1 Goalie:</i> Plays the entire game.</li>
@@ -95,7 +105,7 @@
                 </ul>
             </li>
             <li><b>Absences:</b> Checking 'Abs' completely removes a player from the math for this game, but remembers their positions for next week.</li>
-            <li><b>Portability:</b> Use Export/Import to move your roster from your laptop to your phone for game day!</li>
+            <li><b>Portability:</b> Use Export to generate a shareable link for your assistant coaches!</li>
         </ul>
         <button class="modal-close" onclick="closeModal('infoModal')">Got it!</button>
     </div>
