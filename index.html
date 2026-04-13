@@ -13,7 +13,7 @@
     <div class="app-header">
         <h1>⚽ Lineup Generator</h1>
         <div class="utility-btns">
-            <button class="util-btn info-btn" onclick="openModal('infoModal')">How it Works (Info)</button>
+            <button class="util-btn info-btn" onclick="openModal('infoModal')">Info</button>
             <button class="util-btn" onclick="openModal('importModal')">Import Roster</button>
             <button id="exportBtn" class="util-btn" onclick="openModal('exportModal')" disabled>Export Roster</button>
         </div>
@@ -51,7 +51,7 @@
             </tr>
         </thead>
         <tbody id="playerList">
-            </tbody>
+        </tbody>
     </table>
     <div class="add-player-btn" onclick="addPlayerRow()">+ Add Additional Player</div>
     
@@ -67,7 +67,7 @@
     <div id="statsContainer"></div>
 </div>
 
-<div id="web-view" class="grid"></div>
+<div id="web-view"></div>
 
 <div id="print-view"></div>
 
@@ -93,20 +93,13 @@
 
 <div class="modal-overlay" id="infoModal">
     <div class="modal">
-        <h3>Coach's Guide</h3>
-        <ul style="font-size: 0.9rem; color: #333; line-height: 1.5; padding-left: 20px;">
-            <li><b>The Fair-Play Algorithm:</b> The generator tracks every shift. When subbing, it prioritizes putting in players who have sat on the bench the longest, and pulling out players who have played the most consecutive shifts.</li>
-            <li><b>Position Locks:</b> A player will only be substituted into checked positions. Leave a player completely blank to make them eligible for <b>Any Position</b>.</li>
-            <li><b>Goalie Logic:</b> 
-                <ul>
-                    <li><i>1 Goalie:</i> Plays the entire game.</li>
-                    <li><i>2 Goalies:</i> Swaps at halftime. The 2nd half Goalie gets Q2S2 completely off to gear up!</li>
-                    <li><i>3+ Goalies:</i> Rotates evenly every quarter.</li>
-                </ul>
-            </li>
-            <li><b>Absences:</b> Checking 'Abs' completely removes a player from the math for this game, but remembers their positions for next week.</li>
-            <li><b>Portability:</b> Use Export to generate a shareable link for your assistant coaches!</li>
-        </ul>
+        <h3>How the Generator Works</h3>
+        <div style="font-size: 0.9rem; color: #333; line-height: 1.6; text-align: left; margin-bottom: 20px;">
+            <p style="margin-bottom: 10px;"><b>Fairness First:</b> The engine prioritizes equal playing time above all else. It strictly calculates bench rotations to ensure shifts are distributed as evenly as mathematically possible.</p>
+            <p style="margin-bottom: 10px;"><b>Positional Preferences:</b> Players are assigned to their preferred roles whenever possible. However, if preferences conflict with fair playing time, the engine will override preferences to force a fair substitution.</p>
+            <p style="margin-bottom: 10px;"><b>Goalie Rules:</b> Goalie shifts are mandatory. If multiple players select Goalie, they share the net and their field/bench time is balanced around those shifts. If <i>no one</i> selects Goalie, the entire team takes turns in the net.</p>
+            <p style="margin-bottom: 0;"><b>No Subs Lock:</b> If you have exactly the minimum required players for a format, the engine will automatically lock the field positions for the entire half to prevent unnecessary shuffling.</p>
+        </div>
         <button class="modal-close" onclick="closeModal('infoModal')">Got it!</button>
     </div>
 </div>
