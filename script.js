@@ -377,7 +377,7 @@ function generate() {
         remainingGoalieShifts[name] = 0;
     });
 
-    // LOOK-AHEAD: Pre-calculate guaranteed Goalie shifts to adjust Virtual Shift counts
+    // Look-ahead to identify mandatory goalie shifts 
     for (let q = 1; q <= 4; q++) {
         for (let r = 1; r <= 2; r++) {
             let scheduledGK = "";
@@ -388,9 +388,6 @@ function generate() {
             if (scheduledGK) remainingGoalieShifts[scheduledGK]++;
         }
     }
-
-    // Virtual Shift Counter = Actual Shifts Played + Guaranteed Future Goalie Shifts
-    const vIn = (p) => stats[p].in + remainingGoalieShifts[p];
 
     let footerHTML = `<div class="roster-footer"><div><b>ROSTER:</b> ${activePlayers.map(p => formatNamePrint(p, rolesMap[p], true)).join(', ')}</div>`;
     if (absentPlayers.length > 0) footerHTML += `<div style="color: #666; margin-top: 5px;"><b>ABSENT:</b> ${absentPlayers.join(', ')}</div>`;
@@ -462,8 +459,13 @@ function generate() {
 
                 if (isReset) {
                     let sortedPool = [...fieldPool].sort((a, b) => {
-                        if (vIn(a) !== vIn(b)) return vIn(a) - vIn(b);
+                        // Lowest In counts go to field first
+                        if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
+                        // THE TIE BREAKER: Lowest remaining Goalie shifts go to field (forces future goalies to bench)
+                        if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[a] - remainingGoalieShifts[b];
+                        // Highest Bench counts go to field first
                         if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
+                        // Protect resting goalie from early benching
                         if (a === restingGK && q <= 2) return -1;
                         if (b === restingGK && q <= 2) return 1;
                         return 0;
@@ -501,7 +503,8 @@ function generate() {
                             let eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
                             
                             eligibleBench.sort((a, b) => {
-                                if (vIn(a) !== vIn(b)) return vIn(a) - vIn(b);
+                                if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
+                                if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[a] - remainingGoalieShifts[b];
                                 if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
                                 return 0;
                             });
@@ -521,7 +524,8 @@ function generate() {
                     let benchBefore = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
                     
                     benchBefore.sort((a, b) => {
-                        if (vIn(a) !== vIn(b)) return vIn(a) - vIn(b);
+                        if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
+                        if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[a] - remainingGoalieShifts[b];
                         if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
                         return 0;
                     });
@@ -533,8 +537,13 @@ function generate() {
                         let currentField = slotOrder.map(s => currentAssignments[s]).filter(n => n !== "");
                         
                         let sortedField = [...currentField].sort((a, b) => {
-                            if (vIn(a) !== vIn(b)) return vIn(b) - vIn(a); 
+                            // Highest In counts sub out first
+                            if (stats[a].in !== stats[b].in) return stats[b].in - stats[a].in; 
+                            // TIE BREAKER: Higher remaining Goalie shifts sub out first
+                            if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[b] - remainingGoalieShifts[a];
+                            // Lowest Bench counts sub out first
                             if (stats[a].bench !== stats[b].bench) return stats[a].bench - stats[b].bench; 
+                            // Protect resting goalie from early subbing
                             if (a === restingGK && q <= 2) return 1; 
                             if (b === restingGK && q <= 2) return -1;
                             return 0;
@@ -542,7 +551,8 @@ function generate() {
                         
                         let topCandidate = sortedField[0];
                         let candidatesToSit = sortedField.filter(n => 
-                            vIn(n) === vIn(topCandidate) && 
+                            stats[n].in === stats[topCandidate].in && 
+                            remainingGoalieShifts[n] === remainingGoalieShifts[topCandidate] &&
                             stats[n].bench === stats[topCandidate].bench
                         );
                         
@@ -576,6 +586,7 @@ function generate() {
                 else stats[name].bench++;
             });
             
+            // Deduct the shift from the goalie's mandatory queue
             if (currentAssignments['gk']) remainingGoalieShifts[currentAssignments['gk']]--;
 
             Object.entries(currentAssignments).forEach(([slot, player]) => {
