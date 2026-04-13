@@ -424,8 +424,16 @@ function generate() {
                 }
                 
                 currentAssignments['gk'] = activeGK;
-                let fieldPool = activePlayers.filter(n => n !== activeGK);
+                
+                // --- THE "GHOST GOALIE" FIX ---
+                // If the new goalie was on the field last shift, pull them off the field!
+                slotOrder.forEach(slot => {
+                    if (currentAssignments[slot] === activeGK) {
+                        currentAssignments[slot] = "";
+                    }
+                });
 
+                let fieldPool = activePlayers.filter(n => n !== activeGK);
                 let canAffordBreak = (fieldPool.length - 1 >= slotOrder.length);
 
                 if (goalies.length === 2 && q === 2 && r === 2 && restingGK && canAffordBreak) {
@@ -438,16 +446,10 @@ function generate() {
                 }
 
                 if (isReset) {
-                    // FAIR PLAY OVERRIDE: Mathematically sort who MUST be on the field
                     let sortedPool = [...fieldPool].sort((a, b) => {
-                        // 1. Sort by number of shifts already played
                         if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
-                        
-                        // 2. TIE BREAKER: Protect the resting goalie in the first half 
-                        // from sitting early, since they are forced to sit in Q2S2.
                         if (a === restingGK && q <= 2) return -1;
                         if (b === restingGK && q <= 2) return 1;
-                        
                         return 0;
                     });
                     
@@ -456,7 +458,6 @@ function generate() {
                     
                     let unassignedPlayers = [...playersToField];
                     
-                    // Try to match preferences first
                     slotOrder.forEach(slot => {
                         let eligibleIndex = unassignedPlayers.findIndex(name => isEligible(rolesMap[name], slot));
                         if (eligibleIndex !== -1) {
@@ -467,7 +468,6 @@ function generate() {
                         }
                     });
                     
-                    // Force the remaining unassigned players into the remaining spots to ensure even play
                     slotOrder.forEach(slot => {
                         if (currentAssignments[slot] === "") {
                             if (unassignedPlayers.length > 0) {
@@ -480,7 +480,6 @@ function generate() {
                     subsDisplay = playersToBench.length > 0 ? ["<b>Bench:</b> " + playersToBench.join(', ')] : ["No Subs"];
                 
                 } else {
-                    // Fill explicitly vacated spots (like goalies taking a break)
                     slotOrder.forEach(slot => {
                         if (currentAssignments[slot] === "") {
                             let eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
@@ -498,7 +497,6 @@ function generate() {
                         }
                     });
 
-                    // Sub remaining bench players into the field
                     let benchBefore = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
                     benchBefore.sort((a, b) => stats[a].in - stats[b].in); 
                     
@@ -508,16 +506,13 @@ function generate() {
                     playersToBringIn.forEach(incomingPlayer => {
                         let currentField = slotOrder.map(s => currentAssignments[s]).filter(n => n !== "");
                         
-                        // FAIR PLAY OVERRIDE: Identify the exact players on the field who have the MOST shifts
                         let maxShiftsOnField = Math.max(...currentField.map(n => stats[n].in));
                         let candidatesToSit = currentField.filter(n => stats[n].in === maxShiftsOnField);
                         
-                        // TIE BREAKER: Protect the resting goalie in the first half from being subbed out early
                         if (candidatesToSit.length > 1 && q <= 2 && candidatesToSit.includes(restingGK)) {
                             candidatesToSit = candidatesToSit.filter(n => n !== restingGK);
                         }
                         
-                        // Can we swap out one of these max-shift players AND match the incoming player's preference?
                         let eligibleSlots = slotOrder.filter(slot => {
                             let occupant = currentAssignments[slot];
                             return occupant && candidatesToSit.includes(occupant) && isEligible(rolesMap[incomingPlayer], slot);
@@ -527,7 +522,6 @@ function generate() {
                         if (eligibleSlots.length > 0) {
                             slotToSwap = eligibleSlots[0];
                         } else {
-                            // If preferences don't align, force the swap anyway. Playing time > Preference.
                             slotToSwap = slotOrder.find(slot => currentAssignments[slot] === candidatesToSit[0]);
                         }
                         
