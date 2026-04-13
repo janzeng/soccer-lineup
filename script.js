@@ -224,12 +224,11 @@ function buildPrintHeaderHTML(teamName, format, rightText) {
     return html;
 }
 
-// New function for Web Headers
 function buildWebHeaderHTML(teamName, format, rightText, isFirst) {
     let titleStr = `${teamName.toUpperCase()} — ${format.toLowerCase()}`;
     let topMargin = isFirst ? '0' : '30px'; 
     return `
-        <div style="width: 100%; margin: ${topMargin} 0 15px 0; border-bottom: 2px solid #ccc; padding-bottom: 5px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%; margin: ${topMargin} 0 15px 0; border-bottom: 2px solid #ccc; padding-bottom: 5px;">
             <div style="font-size: 1.2rem; font-weight: bold; color: #222;">${titleStr}</div>
             <div style="font-size: 1.1rem; font-weight: bold; color: #444;">${rightText}</div>
         </div>
@@ -238,7 +237,6 @@ function buildWebHeaderHTML(teamName, format, rightText, isFirst) {
 
 function generate() {
     const data = saveUI();
-    
     loadUI(); 
 
     const webView = document.getElementById('web-view');
@@ -273,7 +271,7 @@ function generate() {
     let printHTMLStr = "";
 
     for (let q = 1; q <= 4; q++) {
-        // Add headers for the web and print views
+        // Headers 
         if (q === 1) {
             printHTMLStr += buildPrintHeaderHTML(tName, data.format, '1st Half');
             webHTMLStr += buildWebHeaderHTML(tName, data.format, '1st Half', true);
@@ -285,6 +283,10 @@ function generate() {
             
             webHTMLStr += buildWebHeaderHTML(tName, data.format, '2nd Half', false);
         }
+
+        // Initialize the flexbox Row wrapper
+        let webRowHTML = `<div class="card-row">`;
+        let printRowHTML = `<div class="card-row">`;
 
         for (let r = 1; r <= 2; r++) {
             const isReset = (q === 1 && r === 1) || (q === 3 && r === 1);
@@ -385,9 +387,16 @@ function generate() {
                 </div>
             `;
             
-            webHTMLStr += cardHTML;
-            printHTMLStr += cardHTML;
+            webRowHTML += cardHTML;
+            printRowHTML += cardHTML;
         }
+        
+        // Close the Row wrapper
+        webRowHTML += `</div>`;
+        printRowHTML += `</div>`;
+        
+        webHTMLStr += webRowHTML;
+        printHTMLStr += printRowHTML;
     }
     
     printHTMLStr += footerHTML;
