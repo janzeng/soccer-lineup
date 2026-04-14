@@ -52,9 +52,9 @@ Click **Export Roster -> Copy Roster JSON** to copy your team's configuration to
   "format": "7v7",
   "includeSummary": true,
   "players": [
-    { "name": "John", "roles": ["C", "M", "F"] },
-    { "name": "Michael", "roles": ["G"] },
-    { "name": "Cole", "roles": ["G", "D"] },
-    { "name": "Andy", "roles": ["S", "F"] }
+    { "name": "John", "roles": "CMF" },
+    { "name": "Michael", "roles": "G" },
+    { "name": "Cole", "roles": "GD" },
+    { "name": "Andy", "roles": "SF" }
   ]
 }
