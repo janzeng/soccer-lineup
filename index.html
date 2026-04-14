@@ -85,7 +85,7 @@
     <div class="modal">
         <h3>Import Roster Data</h3>
         <p style="font-size: 0.9rem; color: #555;">Paste the JSON roster code you exported here to instantly load your team.</p>
-        <textarea id="importText" placeholder='{&#10;  "teamName": "Pizza Eaters",&#10;  "format": "7v7",&#10;  "players": [...]&#10;}'></textarea>
+        <textarea id="importText" placeholder='{&#10;  "teamName": "Pizza Eaters",&#10;  "format": "7v7",&#10;  "players": [&#10;    { "name": "Adam", "roles": "SMD" }&#10;  ]&#10;}'></textarea>
         <button class="action-btn" style="width: 100%; margin-bottom: 10px;" onclick="importData()">Load Data</button>
         <button class="modal-close" onclick="closeModal('importModal')">Cancel</button>
     </div>

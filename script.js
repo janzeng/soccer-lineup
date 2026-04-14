@@ -57,6 +57,30 @@ window.onload = () => {
     loadUI(); 
 };
 
+// --- DATA PACKING & UNPACKING FOR URLS ---
+// The default JSON now uses strings natively (e.g. "roles": "SMD"), making this even simpler.
+function packData(data) {
+    return {
+        t: data.teamName,
+        f: data.format,
+        s: data.includeSummary ? 1 : 0,
+        p: data.players.map(p => [p.name, p.roles]) 
+    };
+}
+
+function unpackData(data) {
+    return {
+        teamName: data.t || "",
+        format: data.f || "7v7",
+        includeSummary: data.s === 1,
+        players: (data.p || []).map(arr => ({
+            name: arr[0],
+            roles: arr[1] || ""
+        }))
+    };
+}
+// -----------------------------------------
+
 function openModal(id) { document.getElementById(id).style.display = 'flex'; }
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
@@ -65,8 +89,10 @@ function checkURLParams() {
     if (params.has('data')) {
         try {
             let decoded = JSON.parse(decodeURIComponent(atob(params.get('data'))));
-            if (decoded.format && decoded.players) {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(decoded));
+            let unpacked = unpackData(decoded); 
+            
+            if (unpacked.format && unpacked.players) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(unpacked));
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
         } catch (e) {
@@ -146,7 +172,7 @@ function loadUI() {
     
     emptyPlayers = [];
     for(let i = 0; i < allowedEmpty; i++) {
-        emptyPlayers.push({name: "", roles: []});
+        emptyPlayers.push({name: "", roles: ""}); // Default to empty string instead of array
     }
     
     data.players = [...realPlayers, ...emptyPlayers];
@@ -172,7 +198,8 @@ function saveUI() {
 
     rows.forEach(row => {
         let name = row.querySelector('.p-name').value.trim();
-        let roles = Array.from(row.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+        // Join the selected checkboxes directly into a string like "SMD"
+        let roles = Array.from(row.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value).join('');
         players.push({ name, roles });
     });
 
@@ -195,7 +222,7 @@ function saveAndSort() {
     loadUI();
 }
 
-function addPlayerRow(name = '', roles = []) {
+function addPlayerRow(name = '', roles = '') { // Defaults to string
     const tbody = document.getElementById('playerList');
     let tr = document.createElement('tr');
     if (roles.includes('A')) tr.className = 'absent-row';
@@ -235,7 +262,8 @@ function copyShareLink() {
     if (realPlayers.length === 0) return;
     
     let exportData = { ...data, players: realPlayers };
-    let jsonStr = JSON.stringify(exportData);
+    let packedData = packData(exportData); 
+    let jsonStr = JSON.stringify(packedData);
     let base64 = btoa(encodeURIComponent(jsonStr)); 
     let shareLink = window.location.origin + window.location.pathname + "?data=" + base64;
     
@@ -263,8 +291,13 @@ function importData() {
     if (!text) return;
     try {
         let decoded = JSON.parse(text);
+        
+        // Check if the user pasted a raw Packed URL JSON, and unpack it if they did
+        if (decoded.p && !decoded.players) {
+            decoded = unpackData(decoded);
+        }
+        
         if (decoded.format && decoded.players) {
-            
             decoded.players.sort((a, b) => {
                 return a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'});
             });
@@ -303,7 +336,8 @@ function formatNamePrint(name, roles, showAbbr = false) {
     
     if (roles.length === 0) return `${name} <span class="p-name-abbr">[Any]</span>`;
     
-    let abbrStr = roles.includes('A') ? 'Abs' : roles.map(r => ROLE_MAP[r]).join(', ');
+    // Split the string into an array to map to the full labels
+    let abbrStr = roles.includes('A') ? 'Abs' : roles.split('').map(r => ROLE_MAP[r]).join(', ');
     return `${name} <span class="p-name-abbr">[${abbrStr}]</span>`;
 }
 
@@ -351,7 +385,7 @@ function generate() {
     let generatedPlayerIndex = realPlayersList.length + 1;
 
     for (let i = 0; i < neededToFill; i++) {
-        let rolesToUse = (i < emptyPlayersList.length) ? emptyPlayersList[i].roles : [];
+        let rolesToUse = (i < emptyPlayersList.length) ? emptyPlayersList[i].roles : "";
         processingPlayers.push({ name: `Player ${generatedPlayerIndex++}`, roles: rolesToUse });
     }
 
@@ -377,7 +411,6 @@ function generate() {
         remainingGoalieShifts[name] = 0;
     });
 
-    // Look-ahead to identify mandatory goalie shifts 
     for (let q = 1; q <= 4; q++) {
         for (let r = 1; r <= 2; r++) {
             let scheduledGK = "";
@@ -459,13 +492,9 @@ function generate() {
 
                 if (isReset) {
                     let sortedPool = [...fieldPool].sort((a, b) => {
-                        // Lowest In counts go to field first
                         if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
-                        // THE TIE BREAKER: Lowest remaining Goalie shifts go to field (forces future goalies to bench)
                         if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[a] - remainingGoalieShifts[b];
-                        // Highest Bench counts go to field first
                         if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
-                        // Protect resting goalie from early benching
                         if (a === restingGK && q <= 2) return -1;
                         if (b === restingGK && q <= 2) return 1;
                         return 0;
@@ -537,13 +566,9 @@ function generate() {
                         let currentField = slotOrder.map(s => currentAssignments[s]).filter(n => n !== "");
                         
                         let sortedField = [...currentField].sort((a, b) => {
-                            // Highest In counts sub out first
                             if (stats[a].in !== stats[b].in) return stats[b].in - stats[a].in; 
-                            // TIE BREAKER: Higher remaining Goalie shifts sub out first
                             if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[b] - remainingGoalieShifts[a];
-                            // Lowest Bench counts sub out first
                             if (stats[a].bench !== stats[b].bench) return stats[a].bench - stats[b].bench; 
-                            // Protect resting goalie from early subbing
                             if (a === restingGK && q <= 2) return 1; 
                             if (b === restingGK && q <= 2) return -1;
                             return 0;
@@ -586,7 +611,6 @@ function generate() {
                 else stats[name].bench++;
             });
             
-            // Deduct the shift from the goalie's mandatory queue
             if (currentAssignments['gk']) remainingGoalieShifts[currentAssignments['gk']]--;
 
             Object.entries(currentAssignments).forEach(([slot, player]) => {
