@@ -7,39 +7,39 @@ const FORMATS = {
         slots: ['s', 'lf', 'rf', 'm', 'ld', 'rd'],
         layout: [
             { class: 'row-s center-6', id: 's', label: 'Striker' },
-            { class: 'row-f span-6', id: 'lf', label: 'Forward (L)' },
-            { class: 'row-f span-6', id: 'rf', label: 'Forward (R)' },
+            { class: 'row-f span-6', id: 'lf', label: 'Forward L' },
+            { class: 'row-f span-6', id: 'rf', label: 'Forward R' },
             { class: 'row-m center-6', id: 'm', label: 'Midfield' },
-            { class: 'row-d span-6', id: 'ld', label: 'Defense (L)' },
-            { class: 'row-d span-6', id: 'rd', label: 'Defense (R)' }
+            { class: 'row-d span-6', id: 'ld', label: 'Defense L' },
+            { class: 'row-d span-6', id: 'rd', label: 'Defense R' }
         ]
     },
     '9v9': {
         slots: ['lf', 'rf', 'lm', 'cm', 'rm', 'ld', 'cd', 'rd'],
         layout: [
-            { class: 'row-f span-6', id: 'lf', label: 'Forward (L)' },
-            { class: 'row-f span-6', id: 'rf', label: 'Forward (R)' },
-            { class: 'row-m span-4', id: 'lm', label: 'Mid (L)' },
-            { class: 'row-m span-4', id: 'cm', label: 'Mid (C)' },
-            { class: 'row-m span-4', id: 'rm', label: 'Mid (R)' },
-            { class: 'row-d span-4', id: 'ld', label: 'Def (L)' },
-            { class: 'row-d span-4', id: 'cd', label: 'Def (C)' },
-            { class: 'row-d span-4', id: 'rd', label: 'Def (R)' }
+            { class: 'row-f span-6', id: 'lf', label: 'Forward L' },
+            { class: 'row-f span-6', id: 'rf', label: 'Forward R' },
+            { class: 'row-m span-4', id: 'lm', label: 'Mid L' },
+            { class: 'row-m span-4', id: 'cm', label: 'Mid C' },
+            { class: 'row-m span-4', id: 'rm', label: 'Mid R' },
+            { class: 'row-d span-4', id: 'ld', label: 'Defense L' },
+            { class: 'row-d span-4', id: 'cd', label: 'Defense C' },
+            { class: 'row-d span-4', id: 'rd', label: 'Defense R' }
         ]
     },
     '11v11': {
         slots: ['lf', 'rf', 'lm', 'lcm', 'rcm', 'rm', 'lb', 'lcb', 'rcb', 'rb'],
         layout: [
-            { class: 'row-f span-6', id: 'lf', label: 'Forward (L)' },
-            { class: 'row-f span-6', id: 'rf', label: 'Forward (R)' },
-            { class: 'row-m span-3', id: 'lm', label: 'Mid (L)' },
-            { class: 'row-m span-3', id: 'lcm', label: 'Mid (LC)' },
-            { class: 'row-m span-3', id: 'rcm', label: 'Mid (RC)' },
-            { class: 'row-m span-3', id: 'rm', label: 'Mid (R)' },
-            { class: 'row-d span-3', id: 'lb', label: 'Back (L)' },
-            { class: 'row-d span-3', id: 'lcb', label: 'Back (LC)' },
-            { class: 'row-d span-3', id: 'rcb', label: 'Back (RC)' },
-            { class: 'row-d span-3', id: 'rb', label: 'Back (R)' }
+            { class: 'row-f span-6', id: 'lf', label: 'Forward L' },
+            { class: 'row-f span-6', id: 'rf', label: 'Forward R' },
+            { class: 'row-m span-3', id: 'lm', label: 'Mid L' },
+            { class: 'row-m span-3', id: 'lcm', label: 'Mid LC' },
+            { class: 'row-m span-3', id: 'rcm', label: 'Mid RC' },
+            { class: 'row-m span-3', id: 'rm', label: 'Mid R' },
+            { class: 'row-d span-3', id: 'lb', label: 'Defense L' },
+            { class: 'row-d span-3', id: 'lcb', label: 'Defense LC' },
+            { class: 'row-d span-3', id: 'rcb', label: 'Defense RC' },
+            { class: 'row-d span-3', id: 'rb', label: 'Defense R' }
         ]
     }
 };
@@ -58,7 +58,6 @@ window.onload = () => {
 };
 
 // --- DATA PACKING & UNPACKING FOR URLS ---
-// The default JSON now uses strings natively (e.g. "roles": "SMD"), making this even simpler.
 function packData(data) {
     return {
         t: data.teamName,
@@ -172,7 +171,7 @@ function loadUI() {
     
     emptyPlayers = [];
     for(let i = 0; i < allowedEmpty; i++) {
-        emptyPlayers.push({name: "", roles: ""}); // Default to empty string instead of array
+        emptyPlayers.push({name: "", roles: ""});
     }
     
     data.players = [...realPlayers, ...emptyPlayers];
@@ -198,7 +197,6 @@ function saveUI() {
 
     rows.forEach(row => {
         let name = row.querySelector('.p-name').value.trim();
-        // Join the selected checkboxes directly into a string like "SMD"
         let roles = Array.from(row.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value).join('');
         players.push({ name, roles });
     });
@@ -222,7 +220,7 @@ function saveAndSort() {
     loadUI();
 }
 
-function addPlayerRow(name = '', roles = '') { // Defaults to string
+function addPlayerRow(name = '', roles = '') {
     const tbody = document.getElementById('playerList');
     let tr = document.createElement('tr');
     if (roles.includes('A')) tr.className = 'absent-row';
@@ -292,7 +290,6 @@ function importData() {
     try {
         let decoded = JSON.parse(text);
         
-        // Check if the user pasted a raw Packed URL JSON, and unpack it if they did
         if (decoded.p && !decoded.players) {
             decoded = unpackData(decoded);
         }
@@ -336,7 +333,6 @@ function formatNamePrint(name, roles, showAbbr = false) {
     
     if (roles.length === 0) return `${name} <span class="p-name-abbr">[Any]</span>`;
     
-    // Split the string into an array to map to the full labels
     let abbrStr = roles.includes('A') ? 'Abs' : roles.split('').map(r => ROLE_MAP[r]).join(', ');
     return `${name} <span class="p-name-abbr">[${abbrStr}]</span>`;
 }
@@ -544,7 +540,8 @@ function generate() {
                             if (playerToInsert) {
                                 currentAssignments[slot] = playerToInsert;
                                 let outgoingText = vacatedByBreak ? vacatedByBreak : "Empty";
-                                subsDisplay.push(`<b>${playerToInsert}</b> <span class="arrow">→</span> ${outgoingText}`);
+                                let slotLabel = slot === 'gk' ? 'Goalie' : formatConfig.layout.find(item => item.id === slot).label;
+                                subsDisplay.push(`<b>${playerToInsert}</b> <span class="arrow">→</span> ${outgoingText} (${slotLabel})`);
                                 vacatedByBreak = null; 
                             }
                         }
@@ -599,7 +596,8 @@ function generate() {
                         
                         let outgoingPlayer = currentAssignments[slotToSwap];
                         currentAssignments[slotToSwap] = incomingPlayer;
-                        subsDisplay.push(`<b>${incomingPlayer}</b> <span class="arrow">→</span> ${outgoingPlayer}`);
+                        let slotLabel = slotToSwap === 'gk' ? 'Goalie' : formatConfig.layout.find(item => item.id === slotToSwap).label;
+                        subsDisplay.push(`<b>${incomingPlayer}</b> <span class="arrow">→</span> ${outgoingPlayer} (${slotLabel})`);
                     });
                     
                     if (subsDisplay.length === 0) subsDisplay = ["No Subs"];
