@@ -1,6 +1,7 @@
 const ROLE_KEYS = ['C', 'S', 'F', 'M', 'D', 'G', 'A'];
 const ROLE_MAP = { 'C': 'Cap', 'S': 'S', 'F': 'F', 'M': 'M', 'D': 'D', 'G': 'Goal', 'A': 'Abs' };
 const STORAGE_KEY = 'v1_SmartSub_Data';
+const STATE_KEY = 'v1_SmartSub_MatchState';
 
 const FORMATS = {
     '7v7': {
@@ -52,23 +53,101 @@ const SLOTS_TO_ROLES = {
 
 const SORT_ORDER = { 'Striker': 1, 'Forward': 2, 'Midfield': 3, 'Defense': 4, 'Goalie': 5 };
 
+// --- DRAG AND DROP STATE HANDLERS ---
+let dragSrcPos = null;
+
+window.dragStart = function(e) {
+    dragSrcPos = e.target.closest('.pos');
+    e.dataTransfer.effectAllowed = 'move';
+    dragSrcPos.style.opacity = '0.4';
+};
+
+window.dragOver = function(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+};
+
+window.dragEnter = function(e) {
+    e.preventDefault();
+    let targetPos = e.target.closest('.pos');
+    // Only highlight if it's within the exact same shift card
+    if (targetPos && dragSrcPos && targetPos !== dragSrcPos && targetPos.getAttribute('data-shift') === dragSrcPos.getAttribute('data-shift')) {
+        targetPos.classList.add('drag-target');
+    }
+};
+
+window.dragLeave = function(e) {
+    let targetPos = e.target.closest('.pos');
+    if (targetPos) {
+        targetPos.classList.remove('drag-target');
+    }
+};
+
+window.dropField = function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    let targetPos = e.target.closest('.pos');
+    if (targetPos) targetPos.classList.remove('drag-target');
+
+    if (dragSrcPos) dragSrcPos.style.opacity = '1';
+
+    if (dragSrcPos && targetPos && dragSrcPos !== targetPos) {
+        let dragShift = dragSrcPos.getAttribute('data-shift');
+        let targetShift = targetPos.getAttribute('data-shift');
+
+        // Swap state if dragged inside the exact same shift
+        if (dragShift === targetShift) {
+            let shiftIdx = parseInt(dragShift);
+            let dragSlot = dragSrcPos.getAttribute('data-slot');
+            let targetSlot = targetPos.getAttribute('data-slot');
+
+            let temp = window.matchState[shiftIdx].assignments[dragSlot];
+            window.matchState[shiftIdx].assignments[dragSlot] = window.matchState[shiftIdx].assignments[targetSlot];
+            window.matchState[shiftIdx].assignments[targetSlot] = temp;
+
+            let data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+            let currentHash = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+            localStorage.setItem(STATE_KEY, JSON.stringify({ hash: currentHash, state: window.matchState }));
+
+            renderLineups();
+        }
+    }
+    dragSrcPos = null;
+    return false;
+};
+
+window.dragEnd = function(e) {
+    if (dragSrcPos) dragSrcPos.style.opacity = '1';
+    document.querySelectorAll('.pos').forEach(el => el.classList.remove('drag-target'));
+    dragSrcPos = null;
+};
+
 window.onload = () => { 
     checkURLParams();
     loadUI(); 
+    attemptLoadSavedState();
 };
 
-// --- DATA PACKING & UNPACKING FOR URLS ---
-function packData(data) {
-    return {
+function packData(data, matchState) {
+    let packed = {
         t: data.teamName,
         f: data.format,
         s: data.includeSummary ? 1 : 0,
         p: data.players.map(p => [p.name, p.roles]) 
     };
+    
+    // Add memory state to the shareable URL if it exists
+    if (matchState && matchState.length > 0) {
+        packed.m = matchState.map(shift => shift.assignments);
+    }
+    
+    return packed;
 }
 
 function unpackData(data) {
-    return {
+    let roster = {
         teamName: data.t || "",
         format: data.f || "7v7",
         includeSummary: data.s === 1,
@@ -77,8 +156,18 @@ function unpackData(data) {
             roles: arr[1] || ""
         }))
     };
+
+    let matchState = null;
+    if (data.m) {
+        matchState = data.m.map((assig, i) => ({
+            q: Math.floor(i / 2) + 1,
+            r: (i % 2) + 1,
+            assignments: assig
+        }));
+    }
+
+    return { roster, matchState };
 }
-// -----------------------------------------
 
 function openModal(id) { document.getElementById(id).style.display = 'flex'; }
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
@@ -88,10 +177,28 @@ function checkURLParams() {
     if (params.has('data')) {
         try {
             let decoded = JSON.parse(decodeURIComponent(atob(params.get('data'))));
-            let unpacked = unpackData(decoded); 
+            let unpackedRoster, matchState;
             
-            if (unpacked.format && unpacked.players) {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(unpacked));
+            if (decoded.players) { // Legacy link catch
+                unpackedRoster = decoded;
+            } else {
+                let unpackedData = unpackData(decoded); 
+                unpackedRoster = unpackedData.roster;
+                matchState = unpackedData.matchState;
+            }
+            
+            if (unpackedRoster.format && unpackedRoster.players) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(unpackedRoster));
+                
+                if (matchState) {
+                    let currentHash = btoa(unescape(encodeURIComponent(JSON.stringify(unpackedRoster))));
+                    localStorage.setItem(STATE_KEY, JSON.stringify({ hash: currentHash, state: matchState }));
+                    window.matchState = matchState;
+                } else {
+                    localStorage.removeItem(STATE_KEY);
+                    window.matchState = null;
+                }
+                
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
         } catch (e) {
@@ -130,12 +237,6 @@ function updateButtonStates() {
     captainCheckboxes.forEach(cb => {
         cb.disabled = isCaptainSelected && !cb.checked;
     });
-}
-
-function checkLiveUpdate() {
-    if (document.getElementById('web-view').innerHTML.trim() !== "") {
-        generate();
-    }
 }
 
 function getDefaultPlayerCount(format) {
@@ -246,6 +347,7 @@ function toggleAbs(checkbox) {
 function clearRoster(silent = false) {
     if (silent || confirm("Are you sure you want to clear the entire roster?")) {
         localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(STATE_KEY);
         document.getElementById('teamName').value = "";
         document.getElementById('web-view').innerHTML = "";
         document.getElementById('print-view').innerHTML = "";
@@ -260,7 +362,18 @@ function copyShareLink() {
     if (realPlayers.length === 0) return;
     
     let exportData = { ...data, players: realPlayers };
-    let packedData = packData(exportData); 
+    
+    let stateData = null;
+    let savedStateStr = localStorage.getItem(STATE_KEY);
+    if (savedStateStr) {
+        let savedObj = JSON.parse(savedStateStr);
+        let currentHash = btoa(unescape(encodeURIComponent(JSON.stringify(exportData))));
+        if (savedObj.hash === currentHash) {
+            stateData = savedObj.state;
+        }
+    }
+
+    let packedData = packData(exportData, stateData); 
     let jsonStr = JSON.stringify(packedData);
     let base64 = btoa(encodeURIComponent(jsonStr)); 
     let shareLink = window.location.origin + window.location.pathname + "?data=" + base64;
@@ -289,17 +402,14 @@ function importData() {
     if (!text) return;
     try {
         let decoded = JSON.parse(text);
-        
-        if (decoded.p && !decoded.players) {
-            decoded = unpackData(decoded);
-        }
+        if (decoded.p && !decoded.players) decoded = unpackData(decoded).roster; // Base JSON ignores match state intentionally
         
         if (decoded.format && decoded.players) {
             decoded.players.sort((a, b) => {
                 return a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'});
             });
-
             localStorage.setItem(STORAGE_KEY, JSON.stringify(decoded));
+            localStorage.removeItem(STATE_KEY); 
             loadUI();
             closeModal('importModal');
             document.getElementById('importText').value = "";
@@ -311,7 +421,6 @@ function importData() {
 }
 
 function printLineups() {
-    generate(); 
     setTimeout(() => { window.print(); }, 50);
 }
 
@@ -332,7 +441,6 @@ function formatNamePrint(name, roles, showAbbr = false) {
     if (!showAbbr) return name; 
     
     if (roles.length === 0) return `${name} <span class="p-name-abbr">[Any]</span>`;
-    
     let abbrStr = roles.includes('A') ? 'Abs' : roles.split('').map(r => ROLE_MAP[r]).join(', ');
     return `${name} <span class="p-name-abbr">[${abbrStr}]</span>`;
 }
@@ -356,24 +464,33 @@ function buildWebHeaderHTML(teamName, format, rightText, isFirst) {
     `;
 }
 
+// --- STATE MANAGEMENT ---
+function attemptLoadSavedState() {
+    let data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (!data || !data.players) return;
+    
+    let savedStateStr = localStorage.getItem(STATE_KEY);
+    if (savedStateStr) {
+        let savedObj = JSON.parse(savedStateStr);
+        let currentHash = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+        
+        if (savedObj.hash === currentHash) {
+            window.matchState = savedObj.state;
+            renderLineups();
+        }
+    }
+}
+
 function generate() {
     const data = saveUI();
     loadUI(); 
 
-    const webView = document.getElementById('web-view');
-    const printView = document.getElementById('print-view');
-    
-    webView.innerHTML = "";
-    printView.innerHTML = "";
-
-    let tName = data.teamName || "Unnamed Team";
     const formatConfig = FORMATS[data.format];
     const slotOrder = formatConfig.slots;
     const formatMin = getDefaultPlayerCount(data.format);
 
     let realPlayersList = data.players.filter(p => p.name.trim() !== "");
     let emptyPlayersList = data.players.filter(p => p.name.trim() === "");
-    
     let processingPlayers = [];
     realPlayersList.forEach(p => processingPlayers.push({ name: p.name.trim(), roles: p.roles }));
 
@@ -389,21 +506,14 @@ function generate() {
     processingPlayers.forEach(p => rolesMap[p.name] = p.roles);
 
     const activePlayers = processingPlayers.filter(p => !p.roles.includes('A')).map(p => p.name);
-    const absentPlayers = processingPlayers.filter(p => p.roles.includes('A') && !p.name.startsWith("Player ")).map(p => p.name);
     
     let goalies = activePlayers.filter(name => rolesMap[name].includes('G') || rolesMap[name].length === 0);
-    
-    if (goalies.length === 0 && activePlayers.length > 0) {
-        goalies = [...activePlayers];
-    }
+    if (goalies.length === 0 && activePlayers.length > 0) goalies = [...activePlayers];
     
     let stats = {};
-    let playedPositions = {}; 
     let remainingGoalieShifts = {};
-    
     activePlayers.forEach(name => {
         stats[name] = { in: 0, bench: 0 };
-        playedPositions[name] = new Set();
         remainingGoalieShifts[name] = 0;
     });
 
@@ -413,248 +523,291 @@ function generate() {
             if (goalies.length === 1) scheduledGK = goalies[0];
             else if (goalies.length === 2) scheduledGK = (q <= 2) ? goalies[0] : goalies[1];
             else scheduledGK = goalies[(q - 1) % goalies.length];
-            
             if (scheduledGK) remainingGoalieShifts[scheduledGK]++;
         }
     }
 
-    let footerHTML = `<div class="roster-footer"><div><b>ROSTER:</b> ${activePlayers.map(p => formatNamePrint(p, rolesMap[p], true)).join(', ')}</div>`;
-    if (absentPlayers.length > 0) footerHTML += `<div style="color: #666; margin-top: 5px;"><b>ABSENT:</b> ${absentPlayers.join(', ')}</div>`;
-    footerHTML += `</div>`;
-
-    let currentAssignments = {};
-    slotOrder.forEach(s => currentAssignments[s] = "");
-    currentAssignments['gk'] = "";
-
-    let webHTMLStr = "";
-    let printHTMLStr = "";
-
     let isNoSubsGame = (activePlayers.length <= formatMin);
+    window.matchState = []; 
 
     for (let q = 1; q <= 4; q++) {
-        if (q === 1) {
-            printHTMLStr += buildPrintHeaderHTML(tName, data.format, '1st Half');
-            webHTMLStr += buildWebHeaderHTML(tName, data.format, '1st Half', true);
-        }
-        if (q === 3) {
-            printHTMLStr += footerHTML;
-            printHTMLStr += `<div class="page-break"></div>`;
-            printHTMLStr += buildPrintHeaderHTML(tName, data.format, '2nd Half');
-            
-            webHTMLStr += buildWebHeaderHTML(tName, data.format, '2nd Half', false);
-        }
-
-        let webRowHTML = `<div class="card-row">`;
-        let printRowHTML = `<div class="card-row">`;
-
         for (let r = 1; r <= 2; r++) {
-            const isReset = (q === 1 && r === 1) || (q === 3 && r === 1);
-            let subsDisplay = [];
+            let currentAssignments = {};
+            slotOrder.forEach(s => currentAssignments[s] = "");
+            currentAssignments['gk'] = "";
 
-            if (isNoSubsGame && !isReset) {
-                subsDisplay = ["No Subs"];
-            } else {
-                let vacatedByBreak = null;
-                let activeGK = "";
-                let restingGK = "";
+            const isReset = (q === 1 && r === 1) || (q === 3 && r === 1);
+
+            let activeGK = "";
+            if (goalies.length === 1) activeGK = goalies[0];
+            else if (goalies.length === 2) activeGK = (q <= 2) ? goalies[0] : goalies[1];
+            else activeGK = goalies[(q - 1) % goalies.length];
+            
+            currentAssignments['gk'] = activeGK;
+            let fieldPool = activePlayers.filter(n => n !== activeGK);
+
+            if (isReset || isNoSubsGame) {
+                let sortedPool = [...fieldPool].sort((a, b) => {
+                    if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
+                    if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[a] - remainingGoalieShifts[b];
+                    if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
+                    return 0;
+                });
                 
-                if (goalies.length === 1) activeGK = goalies[0];
-                else if (goalies.length === 2) {
-                    activeGK = (q <= 2) ? goalies[0] : goalies[1];
-                    restingGK = (q <= 2) ? goalies[1] : goalies[0];
-                } else if (goalies.length > 2) {
-                    activeGK = goalies[(q - 1) % goalies.length];
-                }
-                
-                currentAssignments['gk'] = activeGK;
+                let playersToField = sortedPool.slice(0, slotOrder.length);
+                let unassignedPlayers = [...playersToField];
                 
                 slotOrder.forEach(slot => {
-                    if (currentAssignments[slot] === activeGK) {
-                        currentAssignments[slot] = "";
+                    let eligibleIndex = unassignedPlayers.findIndex(name => isEligible(rolesMap[name], slot));
+                    if (eligibleIndex !== -1) {
+                        currentAssignments[slot] = unassignedPlayers[eligibleIndex];
+                        unassignedPlayers.splice(eligibleIndex, 1);
                     }
                 });
-
-                let fieldPool = activePlayers.filter(n => n !== activeGK);
-                let canAffordBreak = (fieldPool.length - 1 >= slotOrder.length);
-
-                if (goalies.length === 2 && q === 2 && r === 2 && restingGK && canAffordBreak) {
-                    fieldPool = fieldPool.filter(n => n !== restingGK);
-                    let slotToVacate = slotOrder.find(s => currentAssignments[s] === restingGK);
-                    if (slotToVacate) {
-                        currentAssignments[slotToVacate] = "";
-                        vacatedByBreak = restingGK; 
-                    }
-                }
-
-                if (isReset) {
-                    let sortedPool = [...fieldPool].sort((a, b) => {
-                        if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
-                        if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[a] - remainingGoalieShifts[b];
-                        if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
-                        if (a === restingGK && q <= 2) return -1;
-                        if (b === restingGK && q <= 2) return 1;
-                        return 0;
-                    });
-                    
-                    let playersToField = sortedPool.slice(0, slotOrder.length);
-                    let playersToBench = sortedPool.slice(slotOrder.length);
-                    
-                    let unassignedPlayers = [...playersToField];
-                    
-                    slotOrder.forEach(slot => {
-                        let eligibleIndex = unassignedPlayers.findIndex(name => isEligible(rolesMap[name], slot));
-                        if (eligibleIndex !== -1) {
-                            currentAssignments[slot] = unassignedPlayers[eligibleIndex];
-                            unassignedPlayers.splice(eligibleIndex, 1);
-                        } else {
-                            currentAssignments[slot] = ""; 
-                        }
-                    });
-                    
-                    slotOrder.forEach(slot => {
-                        if (currentAssignments[slot] === "") {
-                            if (unassignedPlayers.length > 0) {
-                                currentAssignments[slot] = unassignedPlayers[0];
-                                unassignedPlayers.shift();
-                            }
-                        }
-                    });
-                    
-                    subsDisplay = playersToBench.length > 0 ? ["<b>Bench:</b> " + playersToBench.join(', ')] : ["No Subs"];
                 
-                } else {
-                    slotOrder.forEach(slot => {
-                        if (currentAssignments[slot] === "") {
-                            let eligibleBench = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
-                            
-                            eligibleBench.sort((a, b) => {
-                                if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
-                                if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[a] - remainingGoalieShifts[b];
-                                if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
-                                return 0;
-                            });
-                            
-                            let prefBench = eligibleBench.filter(n => isEligible(rolesMap[n], slot));
-                            let playerToInsert = prefBench.length > 0 ? prefBench[0] : eligibleBench[0];
+                slotOrder.forEach(slot => {
+                    if (currentAssignments[slot] === "" && unassignedPlayers.length > 0) {
+                        currentAssignments[slot] = unassignedPlayers[0];
+                        unassignedPlayers.shift();
+                    }
+                });
+            
+            } else {
+                let previousAssignments = window.matchState[window.matchState.length - 1].assignments;
+                
+                slotOrder.forEach(slot => currentAssignments[slot] = previousAssignments[slot]);
+                
+                slotOrder.forEach(slot => {
+                    if (currentAssignments[slot] === activeGK) currentAssignments[slot] = "";
+                });
 
-                            if (playerToInsert) {
-                                currentAssignments[slot] = playerToInsert;
-                                let outgoingText = vacatedByBreak ? vacatedByBreak : "Empty";
-                                let slotLabel = slot === 'gk' ? 'Goalie' : formatConfig.layout.find(item => item.id === slot).label;
-                                subsDisplay.push(`<b>${playerToInsert}</b> <span class="arrow">→</span> ${outgoingText} (${slotLabel})`);
-                                vacatedByBreak = null; 
-                            }
-                        }
-                    });
+                let benchBefore = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
+                
+                benchBefore.sort((a, b) => {
+                    if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
+                    if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[a] - remainingGoalieShifts[b];
+                    if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
+                    return 0;
+                });
+                
+                let emptySlots = slotOrder.filter(slot => currentAssignments[slot] === "");
+                let incomingPlayers = benchBefore.slice(0, emptySlots.length);
+                
+                incomingPlayers.forEach(incPlayer => {
+                    let eligibleSlots = emptySlots.filter(slot => isEligible(rolesMap[incPlayer], slot));
+                    let slotToFill = eligibleSlots.length > 0 ? eligibleSlots[0] : emptySlots[0];
+                    currentAssignments[slotToFill] = incPlayer;
+                    emptySlots = emptySlots.filter(s => s !== slotToFill);
+                });
 
-                    let benchBefore = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
+                benchBefore = fieldPool.filter(n => !Object.values(currentAssignments).includes(n));
+                
+                let currentField = slotOrder.map(s => currentAssignments[s]).filter(n => n !== "");
+                let sortedField = [...currentField].sort((a, b) => {
+                    if (stats[a].in !== stats[b].in) return stats[b].in - stats[a].in; 
+                    if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[b] - remainingGoalieShifts[a];
+                    if (stats[a].bench !== stats[b].bench) return stats[a].bench - stats[b].bench; 
+                    return 0;
+                });
+                
+                let numToSub = Math.min(benchBefore.length, slotOrder.length);
+                let playersToBringIn = benchBefore.slice(0, numToSub);
+                
+                playersToBringIn.forEach(incomingPlayer => {
+                    let topCandidate = sortedField[0];
+                    let candidatesToSit = sortedField.filter(n => 
+                        stats[n].in === stats[topCandidate].in && 
+                        remainingGoalieShifts[n] === remainingGoalieShifts[topCandidate] &&
+                        stats[n].bench === stats[topCandidate].bench
+                    );
                     
-                    benchBefore.sort((a, b) => {
-                        if (stats[a].in !== stats[b].in) return stats[a].in - stats[b].in;
-                        if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[a] - remainingGoalieShifts[b];
-                        if (stats[a].bench !== stats[b].bench) return stats[b].bench - stats[a].bench;
-                        return 0;
+                    let eligibleSlots = slotOrder.filter(slot => {
+                        let occupant = currentAssignments[slot];
+                        return occupant && candidatesToSit.includes(occupant) && isEligible(rolesMap[incomingPlayer], slot);
                     });
                     
-                    let numToSub = Math.min(benchBefore.length, slotOrder.length);
-                    let playersToBringIn = benchBefore.slice(0, numToSub);
+                    let slotToSwap = eligibleSlots.length > 0 ? eligibleSlots[0] : slotOrder.find(slot => currentAssignments[slot] === candidatesToSit[0]);
                     
-                    playersToBringIn.forEach(incomingPlayer => {
-                        let currentField = slotOrder.map(s => currentAssignments[s]).filter(n => n !== "");
-                        
-                        let sortedField = [...currentField].sort((a, b) => {
-                            if (stats[a].in !== stats[b].in) return stats[b].in - stats[a].in; 
-                            if (remainingGoalieShifts[a] !== remainingGoalieShifts[b]) return remainingGoalieShifts[b] - remainingGoalieShifts[a];
-                            if (stats[a].bench !== stats[b].bench) return stats[a].bench - stats[b].bench; 
-                            if (a === restingGK && q <= 2) return 1; 
-                            if (b === restingGK && q <= 2) return -1;
-                            return 0;
-                        });
-                        
-                        let topCandidate = sortedField[0];
-                        let candidatesToSit = sortedField.filter(n => 
-                            stats[n].in === stats[topCandidate].in && 
-                            remainingGoalieShifts[n] === remainingGoalieShifts[topCandidate] &&
-                            stats[n].bench === stats[topCandidate].bench
-                        );
-                        
-                        if (candidatesToSit.length > 1 && q <= 2 && candidatesToSit.includes(restingGK)) {
-                            candidatesToSit = candidatesToSit.filter(n => n !== restingGK);
-                        }
-                        
-                        let eligibleSlots = slotOrder.filter(slot => {
-                            let occupant = currentAssignments[slot];
-                            return occupant && candidatesToSit.includes(occupant) && isEligible(rolesMap[incomingPlayer], slot);
-                        });
-                        
-                        let slotToSwap;
-                        if (eligibleSlots.length > 0) {
-                            slotToSwap = eligibleSlots[0];
-                        } else {
-                            slotToSwap = slotOrder.find(slot => currentAssignments[slot] === candidatesToSit[0]);
-                        }
-                        
-                        let outgoingPlayer = currentAssignments[slotToSwap];
-                        currentAssignments[slotToSwap] = incomingPlayer;
-                        let slotLabel = slotToSwap === 'gk' ? 'Goalie' : formatConfig.layout.find(item => item.id === slotToSwap).label;
-                        subsDisplay.push(`<b>${incomingPlayer}</b> <span class="arrow">→</span> ${outgoingPlayer} (${slotLabel})`);
-                    });
-                    
-                    if (subsDisplay.length === 0) subsDisplay = ["No Subs"];
-                }
+                    let outgoingPlayer = currentAssignments[slotToSwap];
+                    currentAssignments[slotToSwap] = incomingPlayer;
+                    sortedField = sortedField.filter(n => n !== outgoingPlayer); 
+                });
             }
+
+            window.matchState.push({
+                q: q, r: r, assignments: currentAssignments
+            });
 
             activePlayers.forEach(name => {
                 if (Object.values(currentAssignments).includes(name)) stats[name].in++;
                 else stats[name].bench++;
             });
-            
             if (currentAssignments['gk']) remainingGoalieShifts[currentAssignments['gk']]--;
+        }
+    }
 
-            Object.entries(currentAssignments).forEach(([slot, player]) => {
-                if (player && playedPositions[player]) {
-                    playedPositions[player].add(SLOTS_TO_ROLES[slot]);
+    let currentHash = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+    localStorage.setItem(STATE_KEY, JSON.stringify({ hash: currentHash, state: window.matchState }));
+    
+    renderLineups();
+}
+
+// --- RENDERING ENGINE ---
+function renderLineups() {
+    const data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    const formatConfig = FORMATS[data.format];
+    const slotOrder = formatConfig.slots;
+    
+    const webView = document.getElementById('web-view');
+    const printView = document.getElementById('print-view');
+    
+    let tName = data.teamName || "Unnamed Team";
+    
+    let realPlayersList = data.players.filter(p => p.name.trim() !== "");
+    let emptyPlayersList = data.players.filter(p => p.name.trim() === "");
+    let processingPlayers = [];
+    realPlayersList.forEach(p => processingPlayers.push({ name: p.name.trim(), roles: p.roles }));
+    let formatMin = getDefaultPlayerCount(data.format);
+    let neededToFill = Math.max(0, formatMin - realPlayersList.length);
+    let generatedPlayerIndex = realPlayersList.length + 1;
+    for (let i = 0; i < neededToFill; i++) {
+        processingPlayers.push({ name: `Player ${generatedPlayerIndex++}`, roles: (i < emptyPlayersList.length) ? emptyPlayersList[i].roles : "" });
+    }
+
+    let rolesMap = {};
+    processingPlayers.forEach(p => rolesMap[p.name] = p.roles);
+    const activePlayers = processingPlayers.filter(p => !p.roles.includes('A')).map(p => p.name);
+    const absentPlayers = processingPlayers.filter(p => p.roles.includes('A') && !p.name.startsWith("Player ")).map(p => p.name);
+
+    let stats = {};
+    let playedPositions = {}; 
+    activePlayers.forEach(name => {
+        stats[name] = { in: 0, bench: 0 };
+        playedPositions[name] = new Set();
+    });
+
+    let footerHTML = `<div class="roster-footer"><div><b>ROSTER:</b> ${activePlayers.map(p => formatNamePrint(p, rolesMap[p], true)).join(', ')}</div>`;
+    if (absentPlayers.length > 0) footerHTML += `<div style="color: #666; margin-top: 5px;"><b>ABSENT:</b> ${absentPlayers.join(', ')}</div>`;
+    footerHTML += `</div>`;
+
+    let webHTMLStr = "";
+    let printHTMLStr = "";
+    let isNoSubsGame = (activePlayers.length <= formatMin);
+
+    window.matchState.forEach((shiftState, shiftIndex) => {
+        let q = shiftState.q;
+        let r = shiftState.r;
+        let currAssig = shiftState.assignments;
+        
+        activePlayers.forEach(name => {
+            if (Object.values(currAssig).includes(name)) stats[name].in++;
+            else stats[name].bench++;
+        });
+        Object.entries(currAssig).forEach(([slot, player]) => {
+            if (player) playedPositions[player].add(SLOTS_TO_ROLES[slot]);
+        });
+
+        if (q === 1 && r === 1) {
+            printHTMLStr += buildPrintHeaderHTML(tName, data.format, '1st Half');
+            webHTMLStr += buildWebHeaderHTML(tName, data.format, '1st Half', true);
+        }
+        if (q === 3 && r === 1) {
+            printHTMLStr += footerHTML;
+            printHTMLStr += `<div class="page-break"></div>`;
+            printHTMLStr += buildPrintHeaderHTML(tName, data.format, '2nd Half');
+            webHTMLStr += buildWebHeaderHTML(tName, data.format, '2nd Half', false);
+        }
+
+        if (r === 1) {
+            webHTMLStr += `<div class="card-row">`;
+            printHTMLStr += `<div class="card-row">`;
+        }
+
+        let subsDisplay = [];
+        let currBench = activePlayers.filter(p => !Object.values(currAssig).includes(p));
+
+        if (isNoSubsGame) {
+            subsDisplay = ["No Subs"];
+        } else if (shiftIndex === 0 || shiftIndex === 4) { // Start of Half
+            subsDisplay = currBench.length > 0 ? ["<b>Bench:</b> " + currBench.join(', ')] : ["No Subs"];
+        } else {
+            let prevAssig = window.matchState[shiftIndex - 1].assignments;
+            let prevBench = activePlayers.filter(p => !Object.values(prevAssig).includes(p));
+
+            let incoming = [];
+            let shifting = [];
+            
+            Object.keys(currAssig).forEach(slot => {
+                let currP = currAssig[slot];
+                let prevP = prevAssig[slot];
+                
+                if (currP && currP !== prevP) {
+                    let slotLabel = slot === 'gk' ? 'Goalie' : formatConfig.layout.find(item => item.id === slot).label;
+                    if (prevBench.includes(currP)) {
+                        incoming.push(`<b>IN: ${currP}</b> <span class="arrow">→</span> ${slotLabel}`);
+                    } else {
+                        shifting.push(`<b>${currP}</b> <span class="arrow">→</span> ${slotLabel}`);
+                    }
                 }
             });
-
-            let fieldHTML = formatConfig.layout.map(item => `
-                <div class="pos ${item.class}">
-                    <span class="label">${item.label}</span>${currentAssignments[item.id] || ''}
-                </div>
-            `).join('');
             
-            fieldHTML += `<div class="pos row-gk center-6"><span class="label">Goalie</span>${currentAssignments.gk}</div>`;
-
-            let cardHTML = `
-                <div class="rotation-card">
-                    <h2><span>QUARTER ${q}</span> <span>SHIFT ${r}</span></h2>
-                    <div class="field-layout">${fieldHTML}</div>
-                    <div class="subs">${subsDisplay.join('<br>')}</div>
-                </div>
-            `;
+            let outgoing = activePlayers.filter(p => currBench.includes(p) && !prevBench.includes(p));
             
-            webRowHTML += cardHTML;
-            printRowHTML += cardHTML;
+            if (incoming.length > 0) subsDisplay.push(...incoming);
+            
+            if (shifting.length > 0) {
+                subsDisplay.push(`<div style="color: #666; margin-top: 2px;"><i>Shift: ${shifting.join(', ')}</i></div>`);
+            }
+            
+            if (outgoing.length > 0) {
+                subsDisplay.push(`<div style="margin-top: 4px; color: #d32f2f;"><b>OFF TO BENCH:</b> ${outgoing.join(', ')}</div>`);
+            }
+
+            if (subsDisplay.length === 0) subsDisplay.push("No Subs");
+
+            let stayingOnBench = currBench.filter(p => prevBench.includes(p));
+            if (stayingOnBench.length > 0) {
+                subsDisplay.push(`<div style="margin-top: 4px; color: #888;"><b>Staying on Bench:</b> ${stayingOnBench.join(', ')}</div>`);
+            }
         }
+
+        // --- NEW DOM DROPPABLE ZONE TARGETS (.pos) ---
+        let fieldHTML = formatConfig.layout.map(item => `
+            <div class="pos ${item.class}" draggable="true" ondragstart="dragStart(event)" ondragover="dragOver(event)" ondragenter="dragEnter(event)" ondragleave="dragLeave(event)" ondrop="dropField(event)" ondragend="dragEnd(event)" data-shift="${shiftIndex}" data-slot="${item.id}">
+                <span class="label">${item.label}</span>
+                <div class="player-name">${currAssig[item.id] || ''}</div>
+            </div>
+        `).join('');
         
-        webRowHTML += `</div>`;
-        printRowHTML += `</div>`;
+        fieldHTML += `
+            <div class="pos row-gk center-6" draggable="true" ondragstart="dragStart(event)" ondragover="dragOver(event)" ondragenter="dragEnter(event)" ondragleave="dragLeave(event)" ondrop="dropField(event)" ondragend="dragEnd(event)" data-shift="${shiftIndex}" data-slot="gk">
+                <span class="label">Goalie</span>
+                <div class="player-name">${currAssig.gk || ''}</div>
+            </div>`;
+
+        let cardHTML = `
+            <div class="rotation-card">
+                <h2><span>QUARTER ${q}</span> <span>SHIFT ${r}</span></h2>
+                <div class="field-layout">${fieldHTML}</div>
+                <div class="subs">${subsDisplay.join('<br>')}</div>
+            </div>
+        `;
         
-        webHTMLStr += webRowHTML;
-        printHTMLStr += printRowHTML;
-    }
-    
+        webHTMLStr += cardHTML;
+        printHTMLStr += cardHTML;
+
+        if (r === 2) {
+            webHTMLStr += `</div>`;
+            printHTMLStr += `</div>`;
+        }
+    });
+
     printHTMLStr += footerHTML;
 
     let requiredRoleNames = new Set(['Goalie']); 
-    formatConfig.slots.forEach(slot => {
-        requiredRoleNames.add(SLOTS_TO_ROLES[slot]);
-    });
-
+    formatConfig.slots.forEach(slot => requiredRoleNames.add(SLOTS_TO_ROLES[slot]));
     let shortPositions = [];
-    const standardOrder = ['Striker', 'Forward', 'Midfield', 'Defense', 'Goalie'];
-
-    standardOrder.forEach(roleName => {
+    ['Striker', 'Forward', 'Midfield', 'Defense', 'Goalie'].forEach(roleName => {
         if (requiredRoleNames.has(roleName)) {
             let hasPreference = activePlayers.some(p => {
                 let r = rolesMap[p];
@@ -665,9 +818,7 @@ function generate() {
                 if (roleName === 'Defense') return r.includes('D');
                 return false;
             });
-            if (!hasPreference) {
-                shortPositions.push(roleName);
-            }
+            if (!hasPreference) shortPositions.push(roleName);
         }
     });
 
@@ -675,7 +826,7 @@ function generate() {
     if (shortPositions.length > 0) {
         warningHTML = `
         <div style="background: #ffebee; border: 1px solid #e57373; padding: 12px; border-radius: 6px; margin: 20px 0 10px 0; color: #c62828; font-size: 0.9rem;">
-            <b>⚠️ Position Warning:</b> Not enough players requested the following positions: <b>${shortPositions.join(', ')}</b>. The generator filled these spots automatically to ensure a complete lineup.
+            <b>⚠️ Position Warning:</b> Not enough players requested the following positions: <b>${shortPositions.join(', ')}</b>. The generator filled these spots automatically.
         </div>`;
     }
 
@@ -684,9 +835,7 @@ function generate() {
     processingPlayers.forEach(p => {
         let roles = p.roles;
         let actualPlayed = Array.from(playedPositions[p.name] || []);
-        
         actualPlayed.sort((a, b) => (SORT_ORDER[a] || 99) - (SORT_ORDER[b] || 99));
-        
         let displayRoles = actualPlayed.length > 0 ? actualPlayed.join(', ') : 'None';
 
         if (roles.includes('A')) {
@@ -699,13 +848,13 @@ function generate() {
     });
     tableHTML += `</table>`;
     
-    document.getElementById('statsContainer').innerHTML = warningHTML + tableHTML;
+    document.getElementById('statsContainer').innerHTML = warningHTML + `<div id="statsTableWrapper">${tableHTML}</div>`;
     webView.innerHTML = webHTMLStr;
 
     if (data.includeSummary) {
         printHTMLStr += `<div class="page-break"></div>`;
         printHTMLStr += buildPrintHeaderHTML(tName, data.format, ''); 
-        printHTMLStr += `<div class="summary-page-wrapper">${warningHTML}${tableHTML}</div>`;
+        printHTMLStr += `<div class="summary-page-wrapper">${warningHTML}<div id="statsTableWrapperPrint">${tableHTML}</div></div>`;
     }
     printView.innerHTML = printHTMLStr;
     
