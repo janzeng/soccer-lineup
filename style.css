@@ -118,3 +118,47 @@ h2 { margin: -6px -6px 6px -6px; font-size: 0.85rem; background: #333; color: #f
     .summary-page-wrapper .stats-table th, .summary-page-wrapper .stats-table td { border: 1px solid #000 !important; color: #000; }
     .summary-page-wrapper .stats-table th { background: #f0f0f0 !important; }
 }
+
+/* Drag and Drop UI */
+.player-name {
+    cursor: grab;
+    padding: 3px;
+    border-radius: 4px;
+    font-weight: bold;
+    color: #222;
+    transition: background 0.2s;
+}
+.player-name:hover {
+    background: #f0f0f0;
+}
+.player-name:active {
+    cursor: grabbing;
+}
+.player-name:empty {
+    min-height: 20px;
+}
+
+/* --- Drag and Drop UI --- */
+.pos { 
+    cursor: grab;
+    transition: all 0.2s ease;
+}
+.pos:active {
+    cursor: grabbing;
+}
+.pos.drag-target {
+    background-color: #c8e6c9 !important;
+    border: 2px dashed #2e7d32 !important;
+    transform: scale(1.05);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    z-index: 10;
+}
+.player-name {
+    font-weight: bold;
+    color: #222;
+    min-height: 18px;
+    pointer-events: none; /* Let the parent .pos handle all events */
+}
+.label {
+    pointer-events: none; /* Let the parent .pos handle all events */
+}
